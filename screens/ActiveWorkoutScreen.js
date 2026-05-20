@@ -1,335 +1,604 @@
 import { Accelerometer } from 'expo-sensors';
 import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  useMemo,
+  useCallback, useEffect, useRef, useState, useMemo,
 } from 'react';
 import {
-  Animated,
-  FlatList,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+  Animated, KeyboardAvoidingView, Modal, Platform,
+  ScrollView, StyleSheet, Text, TextInput,
+  TouchableOpacity, View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 // ─── Stałe ────────────────────────────────────────────────────────────────────
 
-const WORKOUT_NAME = 'Dzień 1: Upper Power';
+const WORKOUT_NAME  = 'Dzień 1: Upper Power';
+
+// Generator presetów przerwy: od 30s do 300s co 5s → 55 pozycji
+const REST_PRESETS = Array.from(
+  { length: Math.floor((300 - 30) / 5) + 1 },
+  (_, i) => 30 + i * 5
+);
+const PRESET_ITEM_H = 62; // wysokość jednej pozycji w drum-rollerze
 
 const INITIAL_EXERCISES = [
   {
-    id: 'ex1',
-    name: 'Wyciskanie sztangi leżąc',
-    muscleGroup: 'Klatka · Triceps · Barki',
-    description: 'Połóż się na ławce, chwyć sztangę nieco szerzej niż ramiona. Opuść kontrolowanie do klatki, wypychaj eksplozywnie. Łopatki ściągnięte przez cały ruch.',
-    muscles: ['Klatka piersiowa', 'Triceps', 'Przedni bark'],
-    restDuration: 120,
+    id: 'ex1', name: 'Wyciskanie sztangi leżąc', muscleGroup: 'Klatka · Triceps · Barki',
+    description: 'Opuść kontrolowanie do klatki, wypychaj eksplozywnie. Łopatki ściągnięte przez cały ruch.',
+    muscles: ['Klatka piersiowa', 'Triceps', 'Przedni bark'], restDuration: 120,
     sets: [
-      { id: 's1', prevLog: '80×8',  suggested: '82.5×8-10',  kg: '80', reps: '8',  rpe: '8', done: false },
-      { id: 's2', prevLog: '80×8',  suggested: '82.5×8-10',  kg: '',   reps: '',   rpe: '',  done: false },
-      { id: 's3', prevLog: '80×6',  suggested: '82.5×6-8',   kg: '',   reps: '',   rpe: '',  done: false },
+      { id: 's1', prevLog: '80×8',  kg: '80', reps: '8',  rpe: '8', done: false },
+      { id: 's2', prevLog: '80×8',  kg: '',   reps: '',   rpe: '',  done: false },
+      { id: 's3', prevLog: '80×6',  kg: '',   reps: '',   rpe: '',  done: false },
     ],
   },
   {
-    id: 'ex2',
-    name: 'Wiosłowanie sztangą',
-    muscleGroup: 'Plecy · Biceps',
-    description: 'Tułów pochylony ~45°. Przyciągaj sztangę do brzucha, łokcie blisko ciała. Kontroluj ekscentrykę.',
-    muscles: ['Najszerszy grzbietu', 'Biceps', 'Tylny bark'],
-    restDuration: 90,
+    id: 'ex2', name: 'Wiosłowanie sztangą', muscleGroup: 'Plecy · Biceps',
+    description: 'Tułów ~45°. Przyciągaj do brzucha, łokcie blisko ciała.',
+    muscles: ['Najszerszy grzbietu', 'Biceps', 'Tylny bark'], restDuration: 90,
     sets: [
-      { id: 's4', prevLog: '90×8',  suggested: '92.5×8-10',  kg: '', reps: '', rpe: '', done: false },
-      { id: 's5', prevLog: '90×8',  suggested: '92.5×8-10',  kg: '', reps: '', rpe: '', done: false },
+      { id: 's4', prevLog: '90×8',  kg: '', reps: '', rpe: '', done: false },
+      { id: 's5', prevLog: '90×8',  kg: '', reps: '', rpe: '', done: false },
     ],
   },
   {
-    id: 'ex3',
-    name: 'Wyciskanie żołnierskie',
-    muscleGroup: 'Barki · Triceps',
-    description: 'Sztanga na obojczykach, uchwyt na szerokość barków. Wypychaj pionowo, głowa cofa się w tył.',
-    muscles: ['Przedni bark', 'Boczny bark', 'Triceps'],
-    restDuration: 90,
+    id: 'ex3', name: 'Wyciskanie żołnierskie', muscleGroup: 'Barki · Triceps',
+    description: 'Sztanga na obojczykach. Wypychaj pionowo, głowa cofa się w tył.',
+    muscles: ['Przedni bark', 'Boczny bark', 'Triceps'], restDuration: 90,
     sets: [
-      { id: 's6', prevLog: '60×8',  suggested: '62.5×8-12',  kg: '', reps: '', rpe: '', done: false },
-      { id: 's7', prevLog: '60×8',  suggested: '62.5×8-12',  kg: '', reps: '', rpe: '', done: false },
+      { id: 's6', prevLog: '60×8',  kg: '', reps: '', rpe: '', done: false },
+      { id: 's7', prevLog: '60×8',  kg: '', reps: '', rpe: '', done: false },
     ],
   },
   {
-    id: 'ex4',
-    name: 'Uginanie przedramion ze sztangą',
-    muscleGroup: 'Biceps',
-    description: 'Stój wyprostowany, ramiona przy tułowiu. Uginaj w łokciach do pełnego skurczu. Kontroluj opuszczanie.',
-    muscles: ['Biceps', 'Ramienno-promieniowy'],
-    restDuration: 60,
+    id: 'ex4', name: 'Uginanie przedramion ze sztangą', muscleGroup: 'Biceps',
+    description: 'Ramiona przy tułowiu. Uginaj do pełnego skurczu.',
+    muscles: ['Biceps', 'Ramienno-promieniowy'], restDuration: 60,
     sets: [
-      { id: 's8',  prevLog: '40×10', suggested: '42.5×10-12', kg: '', reps: '', rpe: '', done: false },
-      { id: 's9',  prevLog: '40×10', suggested: '42.5×10-12', kg: '', reps: '', rpe: '', done: false },
-      { id: 's10', prevLog: '40×8',  suggested: '42.5×8-10',  kg: '', reps: '', rpe: '', done: false },
+      { id: 's8',  prevLog: '40×10', kg: '', reps: '', rpe: '', done: false },
+      { id: 's9',  prevLog: '40×10', kg: '', reps: '', rpe: '', done: false },
     ],
   },
   {
-    id: 'ex5',
-    name: 'Triceps na wyciągu',
-    muscleGroup: 'Triceps',
-    description: 'Stój przy wyciągu górnym, łokcie przy tułowiu. Prostuj ramiona w pełnym zakresie ruchu.',
-    muscles: ['Triceps'],
-    restDuration: 60,
+    id: 'ex5', name: 'Triceps na wyciągu', muscleGroup: 'Triceps',
+    description: 'Łokcie przy tułowiu. Prostuj do pełnego wyprostu.',
+    muscles: ['Triceps'], restDuration: 60,
     sets: [
-      { id: 's11', prevLog: '35×12', suggested: '37.5×12-15', kg: '', reps: '', rpe: '', done: false },
-      { id: 's12', prevLog: '35×12', suggested: '37.5×12-15', kg: '', reps: '', rpe: '', done: false },
+      { id: 's10', prevLog: '35×12', kg: '', reps: '', rpe: '', done: false },
+      { id: 's11', prevLog: '35×12', kg: '', reps: '', rpe: '', done: false },
     ],
   },
 ];
 
-// ─── Komponent: strzałka progresu ─────────────────────────────────────────────
-const ProgressArrow = ({ value, suggested }) => {
-  // Porównujemy tylko pierwszą liczbę z widełek (np. "82.5" z "82.5×8-10")
+// ─── Algorytm autoregulacji APRE/RIR ─────────────────────────────────────────
+// Model: RIR = 10 - RPE (Tuchscherer).
+// Progi decyzyjne oparte na badaniach Helmsberga i Zourdosa:
+//   RIR >= 3 → +5 kg   (duży zapas, szybka progresja)
+//   RIR = 2  → +2.5 kg (optymalna strefa treningu)
+//   RIR = 1  → 0 kg    (szczytowa intensywność – utrzymaj)
+//   RIR = 0  → -5%     (limit absolutny – redukcja)
+const calculateAPRE = (sets, prevLog) => {
+  const lastDone = [...sets].reverse().find((s) => s.done && s.kg);
+  const baseKg   = lastDone
+    ? parseFloat(lastDone.kg)
+    : parseFloat(prevLog?.split('×')[0] ?? '0');
+  const baseReps = lastDone?.reps || prevLog?.split('×')[1] || '8';
+
+  if (isNaN(baseKg) || baseKg === 0) {
+    return { suggestedKg: null, label: '—', reason: 'Brak danych z poprzednich serii.' };
+  }
+
+  const rpe = lastDone ? parseFloat(lastDone.rpe) : NaN;
+  const rir = isNaN(rpe) ? NaN : 10 - rpe;
+
+  let deltaKg = 0;
+  let reason  = '';
+
+  if (isNaN(rir)) {
+    deltaKg = 2.5;
+    reason  = 'Brak RPE – domyślna progresja liniowa +2.5 kg.';
+  } else if (rir >= 3) {
+    deltaKg = 5;
+    reason  = `RPE ${rpe} → RIR ${rir} – duży zapas sił. Progresja +5 kg.`;
+  } else if (rir === 2) {
+    deltaKg = 2.5;
+    reason  = `RPE ${rpe} → RIR ${rir} – strefa optymalna. Progresja +2.5 kg.`;
+  } else if (rir === 1) {
+    deltaKg = 0;
+    reason  = `RPE ${rpe} → RIR ${rir} – szczytowa intensywność. Utrzymaj ciężar.`;
+  } else {
+    deltaKg = -(baseKg * 0.05);
+    reason  = `RPE ${rpe} → RIR 0 – przekroczono próg bezpiecznej intensywności. Redukcja ~5%.`;
+  }
+
+  const rounded = Math.round(Math.max(0, baseKg + deltaKg) * 2) / 2;
+  return { suggestedKg: rounded, label: `${rounded} kg × ${baseReps}`, reason };
+};
+
+// ─── Hybrydowy silnik analizy AI (Edge + Cloud fallback) ─────────────────────
+// Ścieżka szybka (RegEx):   słowa kluczowe → natychmiastowa odpowiedź lokalna
+// Ścieżka chmurowa (async): złożone zdanie bez słów kluczowych → setTimeout 1500ms
+const KEYWORDS_EASY   = ['lekko', 'zapas', 'okej', 'git', 'spoko', 'bez problemu', 'luz'];
+const KEYWORDS_HARD   = ['ciężko', 'max', 'upadek', 'nie dałem', 'nie wyszło', 'ból', 'kontuzja'];
+
+const analyzeWorkoutNoteHybrid = async (text, currentWeight) => {
+  const lower = text.toLowerCase().trim();
+
+  if (!lower) {
+    return {
+      status:   null,
+      findings: null,
+      decision: null,
+      isCloud:  false,
+    };
+  }
+
+  // Szybka ścieżka lokalna – RegEx na słowach kluczowych
+  if (KEYWORDS_EASY.some((kw) => lower.includes(kw))) {
+    return {
+      status:   'Analiza lokalna',
+      findings: 'Wykryto wysoki zapas sił / RPE niskie',
+      decision: `Dołóż +2.5 kg w następnej serii dla optymalizacji progresji`,
+      isCloud:  false,
+    };
+  }
+
+  if (KEYWORDS_HARD.some((kw) => lower.includes(kw))) {
+    return {
+      status:   'Analiza lokalna',
+      findings: 'Wykryto sygnały przeciążenia / limit intensywności',
+      decision: 'Utrzymaj obecny ciężar lub zastosuj deload -5% na następny tydzień',
+      isCloud:  false,
+    };
+  }
+
+  // Ścieżka chmurowa – złożone zdanie bez słów kluczowych
+  // setTimeout symuluje latencję API; docelowo zastąpić wywołaniem Anthropic API
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  return {
+    status:   'Głęboka analiza w chmurze',
+    findings: 'Wykryto złożony wzorzec odczuć biomechanicznych',
+    decision: `Złożona analiza AI: Sugerowany deload -5 kg i skupienie na fazie ekscentrycznej. Obserwuj sygnały bólowe.`,
+    isCloud:  true,
+  };
+};
+
+// ─── Modal: drum-roller czasu przerwy ─────────────────────────────────────────
+// snapToInterval + decelerationRate="fast" tworzy efekt bębna bez zewnętrznych lib.
+// Dwie poziome linie (absolutne) podświetlają środkową (aktywną) pozycję.
+const RestPickerModal = ({ visible, currentRest, onSelect, onClose }) => {
+  const scrollRef = useRef(null);
+  const [selected, setSelected] = useState(currentRest);
+
+  useEffect(() => {
+    if (!visible) return;
+    setSelected(currentRest);
+    const idx = REST_PRESETS.indexOf(currentRest);
+    const target = idx >= 0 ? idx : REST_PRESETS.findIndex((s) => s >= currentRest);
+    setTimeout(() => {
+      scrollRef.current?.scrollTo({ y: Math.max(0, target) * PRESET_ITEM_H, animated: false });
+    }, 80);
+  }, [visible, currentRest]);
+
+  const formatLabel = (sec) => {
+    if (sec < 60) return `${sec} s`;
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return s === 0 ? `${m}:00 min` : `${m}:${String(s).padStart(2, '0')} min`;
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={pickerStyles.screen}>
+        <View style={pickerStyles.handle} />
+        <Text style={pickerStyles.title}>Czas przerwy</Text>
+        <Text style={pickerStyles.sub}>Przewiń i wybierz czas przerwy · 30 s – 5:00 min · krok 5 s</Text>
+
+        <View style={pickerStyles.drumContainer}>
+          {/* Górna linia selekcji */}
+          <View style={pickerStyles.lineTop}    pointerEvents="none" />
+          {/* Dolna linia selekcji */}
+          <View style={pickerStyles.lineBottom} pointerEvents="none" />
+
+          <ScrollView
+            ref={scrollRef}
+            showsVerticalScrollIndicator={false}
+            snapToInterval={PRESET_ITEM_H}
+            decelerationRate="fast"
+            contentContainerStyle={{ paddingVertical: PRESET_ITEM_H * 2 }}
+            onMomentumScrollEnd={(e) => {
+              const idx     = Math.round(e.nativeEvent.contentOffset.y / PRESET_ITEM_H);
+              const clamped = Math.max(0, Math.min(idx, REST_PRESETS.length - 1));
+              setSelected(REST_PRESETS[clamped]);
+            }}
+          >
+            {REST_PRESETS.map((sec) => {
+              const active = sec === selected;
+              return (
+                <TouchableOpacity
+                  key={sec}
+                  style={pickerStyles.item}
+                  onPress={() => {
+                    setSelected(sec);
+                    const idx = REST_PRESETS.indexOf(sec);
+                    scrollRef.current?.scrollTo({ y: idx * PRESET_ITEM_H, animated: true });
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[pickerStyles.itemText, active && pickerStyles.itemTextActive]}>
+                    {formatLabel(sec)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        <TouchableOpacity
+          style={pickerStyles.confirmBtn}
+          onPress={() => { onSelect(selected); onClose(); }}
+          activeOpacity={0.85}
+        >
+          <Text style={pickerStyles.confirmText}>Zatwierdź · {formatLabel(selected)}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={pickerStyles.cancelBtn} onPress={onClose} activeOpacity={0.7}>
+          <Text style={pickerStyles.cancelText}>Anuluj</Text>
+        </TouchableOpacity>
+      </View>
+    </Modal>
+  );
+};
+
+const pickerStyles = StyleSheet.create({
+  screen:  { flex: 1, backgroundColor: '#111111' },
+  handle:  { width: 36, height: 4, backgroundColor: '#3A3A3C', borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 20 },
+  title:   { fontSize: 22, fontWeight: '700', color: '#FFFFFF', paddingHorizontal: 24, marginBottom: 6 },
+  sub:     { fontSize: 13, color: '#636366', paddingHorizontal: 24, marginBottom: 20 },
+
+  drumContainer: {
+    height: PRESET_ITEM_H * 5,
+    marginHorizontal: 20,
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: '#1C1C1E',
+    position: 'relative',
+  },
+  lineTop:    { position: 'absolute', top: PRESET_ITEM_H * 2, left: 0, right: 0, height: 1, backgroundColor: '#00E676', zIndex: 10 },
+  lineBottom: { position: 'absolute', top: PRESET_ITEM_H * 3 - 1, left: 0, right: 0, height: 1, backgroundColor: '#00E676', zIndex: 10 },
+
+  item:          { height: PRESET_ITEM_H, justifyContent: 'center', alignItems: 'center' },
+  itemText:      { fontSize: 19, color: '#3A3A3C', fontWeight: '500' },
+  itemTextActive:{ fontSize: 22, color: '#FFFFFF', fontWeight: '700' },
+
+  confirmBtn: { backgroundColor: '#00E676', borderRadius: 16, margin: 20, marginTop: 24, padding: 17, alignItems: 'center' },
+  confirmText:{ fontSize: 16, fontWeight: '700', color: '#000000' },
+  cancelBtn:  { marginHorizontal: 20, padding: 12, alignItems: 'center' },
+  cancelText: { fontSize: 15, color: '#636366' },
+});
+
+// ─── Komponent: strzałka progresu kg ──────────────────────────────────────────
+const ProgressArrow = ({ value, suggestedKg }) => {
   const num = parseFloat(value);
-  const sug = parseFloat((suggested ?? '').split('×')[0]);
-  if (!value || isNaN(num) || isNaN(sug)) return <View style={{ width: 14 }} />;
-  if (num > sug) return <Ionicons name="arrow-up"   size={11} color="#00E676" />;
-  if (num < sug) return <Ionicons name="arrow-down" size={11} color="#FF453A" />;
+  if (!value || isNaN(num) || suggestedKg == null) return <View style={{ width: 14 }} />;
+  if (num > suggestedKg) return <Ionicons name="arrow-up"   size={11} color="#00E676" />;
+  if (num < suggestedKg) return <Ionicons name="arrow-down" size={11} color="#FF453A" />;
   return <Ionicons name="remove" size={11} color="#636366" />;
 };
 
-// ─── Komponent: wiersz serii ───────────────────────────────────────────────────
-// Duże pola TextInput (minHeight: 48) zapewniają trafienie spoconym palcem na siłowni.
-// Pole "reps" przyjmuje dowolny string – umożliwia widełki "8-12" zamiast tylko cyfry
-const SetRow = ({ setData, index, onUpdate, onToggle }) => {
-  const { prevLog, suggested, kg, reps, rpe, done } = setData;
-  const sugKg = (suggested ?? '').split('×')[0];
+// ─── Komponent: karta Smart Insight AI ────────────────────────────────────────
+// Zadanie 1: elegancka karta #1A1A1A z zieloną ramką
+// Zadanie 2: ustrukturyzowany wynik (Status / Wnioski / Decyzja)
+// Zadanie 3: hybryda Edge + Cloud z animowanym stanem ładowania
+// Zadanie 5: aiOpen NIE zależy od done – zawsze klikalny
+const SmartInsightCard = ({ progression }) => {
+  const [note, setNote]         = useState('');
+  const [result, setResult]     = useState(null);
+  const [loading, setLoading]   = useState(false);
+  const debounceRef             = useRef(null);
+
+  // Analiza uruchamiana z debouncem 400ms po ostatnim znaku – unikamy
+  // wywołania API przy każdym keystroke
+  useEffect(() => {
+    clearTimeout(debounceRef.current);
+    if (!note.trim()) { setResult(null); setLoading(false); return; }
+
+    const lower = note.toLowerCase();
+    const isInstant = [
+      ...['lekko', 'zapas', 'okej', 'git', 'spoko', 'bez problemu', 'luz'],
+      ...['ciężko', 'max', 'upadek', 'nie dałem', 'nie wyszło', 'ból', 'kontuzja'],
+    ].some((kw) => lower.includes(kw));
+
+    if (isInstant) {
+      // Szybka ścieżka lokalna – bez ładowania
+      analyzeWorkoutNoteHybrid(note, progression?.suggestedKg).then((r) => setResult(r));
+    } else {
+      // Ścieżka chmurowa – pokaż loader na czas setTimeout
+      debounceRef.current = setTimeout(async () => {
+        setLoading(true);
+        const r = await analyzeWorkoutNoteHybrid(note, progression?.suggestedKg);
+        setLoading(false);
+        setResult(r);
+      }, 400);
+    }
+
+    return () => clearTimeout(debounceRef.current);
+  }, [note]);
 
   return (
-    <View style={rowStyles.row}>
-      {/* Numer serii */}
-      <View style={rowStyles.setNumWrapper}>
-        <Text style={rowStyles.setNum}>{index + 1}</Text>
+    <View style={insightStyles.card}>
+      {/* Nagłówek karty */}
+      <View style={insightStyles.cardHeader}>
+        <Text style={insightStyles.cardHeaderEmoji}>🤖</Text>
+        <Text style={insightStyles.cardHeaderTitle}>REKOMENDACJA AI</Text>
       </View>
 
-      {/* Poprzednio i Sugerowane – tylko do odczytu */}
-      <View style={rowStyles.prevGroup}>
-        <Text style={rowStyles.prevVal} numberOfLines={1}>{prevLog}</Text>
-        <Text style={rowStyles.suggVal} numberOfLines={1}>{suggested}</Text>
-      </View>
-
-      {/* RPE */}
+      {/* Pole notatki użytkownika */}
       <TextInput
-        style={[rowStyles.input, done && rowStyles.inputDone]}
-        value={rpe}
-        onChangeText={(v) => onUpdate('rpe', v)}
-        keyboardType="numeric"
-        maxLength={2}
-        placeholder="—"
+        style={insightStyles.noteInput}
+        value={note}
+        onChangeText={setNote}
+        placeholder='Opisz serię. Skrypt zadziała od razu, a w razie złożonych zdań połączymy się z AI.'
         placeholderTextColor="#3A3A3C"
-        editable={!done}
-        selectTextOnFocus
+        multiline
+        numberOfLines={3}
       />
 
-      {/* kg + strzałka progresu */}
-      <View style={rowStyles.inputWrap}>
-        <TextInput
-          style={[rowStyles.input, done && rowStyles.inputDone]}
-          value={kg}
-          onChangeText={(v) => onUpdate('kg', v)}
-          keyboardType="decimal-pad"
-          maxLength={6}
-          placeholder="kg"
-          placeholderTextColor="#3A3A3C"
-          editable={!done}
-          selectTextOnFocus
-        />
-        <View style={rowStyles.arrow}>
-          <ProgressArrow value={kg} suggested={sugKg} />
+      {/* Wynik analizy */}
+      {loading ? (
+        <View style={insightStyles.loadingRow}>
+          <Text style={insightStyles.loadingText}>🤖 Analizuję Twoje odczucia przez Cloud AI...</Text>
         </View>
-      </View>
-
-      {/* Powtórzenia – keyboardType="default" pozwala wpisać "8-12" z myślnikiem */}
-      <TextInput
-        style={[rowStyles.input, rowStyles.inputReps, done && rowStyles.inputDone]}
-        value={reps}
-        onChangeText={(v) => onUpdate('reps', v)}
-        keyboardType="default"
-        maxLength={6}
-        placeholder="—"
-        placeholderTextColor="#3A3A3C"
-        editable={!done}
-        selectTextOnFocus
-      />
-
-      {/* Checkbox zaliczenia */}
-      <TouchableOpacity
-        style={[rowStyles.checkbox, done && rowStyles.checkboxDone]}
-        onPress={onToggle}
-        activeOpacity={0.7}
-      >
-        {done && <Ionicons name="checkmark" size={18} color="#000" />}
-      </TouchableOpacity>
+      ) : result?.status ? (
+        <View style={insightStyles.resultBlock}>
+          {/* Status */}
+          <View style={insightStyles.resultRow}>
+            <Text style={insightStyles.resultLabel}>Status</Text>
+            <Text style={[
+              insightStyles.resultValue,
+              { color: result.isCloud ? '#378ADD' : '#00E676' },
+            ]}>
+              {result.status}
+            </Text>
+          </View>
+          {/* Wnioski */}
+          <View style={insightStyles.resultRow}>
+            <Text style={insightStyles.resultLabel}>Wnioski</Text>
+            <Text style={insightStyles.resultValue}>{result.findings}</Text>
+          </View>
+          {/* Decyzja */}
+          <View style={[insightStyles.resultRow, insightStyles.resultRowLast]}>
+            <Text style={insightStyles.resultLabel}>Decyzja</Text>
+            <Text style={[insightStyles.resultValue, insightStyles.resultDecision]}>
+              {result.decision}
+            </Text>
+          </View>
+        </View>
+      ) : (
+        // Stan domyślny – puste pole
+        <View style={insightStyles.emptyHint}>
+          <Text style={insightStyles.emptyHintText}>
+            Algorytm APRE sugeruje: <Text style={{ color: '#A78BFA', fontWeight: '600' }}>
+              {progression?.label ?? '—'}
+            </Text>
+          </Text>
+        </View>
+      )}
     </View>
   );
 };
 
-const rowStyles = StyleSheet.create({
-  row: {
+const insightStyles = StyleSheet.create({
+  // Karta z tłem #1A1A1A i subtelną zieloną ramką – Zadanie 1
+  card: {
+    backgroundColor: '#1A1A1A',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#00E676',
+    padding: 14,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     marginBottom: 10,
   },
-  setNumWrapper: {
-    width: 24,
-    alignItems: 'center',
-  },
-  setNum: {
-    fontSize: 14,
+  cardHeaderEmoji: { fontSize: 14 },
+  cardHeaderTitle: {
+    fontSize: 11,
     fontWeight: '700',
-    color: '#636366',
+    color: '#00E676',
+    letterSpacing: 1.2,
   },
-  prevGroup: {
-    flex: 1,
-    minWidth: 0,
-  },
-  prevVal: {
-    fontSize: 11,
-    color: '#636366',
-    marginBottom: 2,
-  },
-  suggVal: {
-    fontSize: 11,
-    color: '#8E8E93',
-    fontWeight: '500',
-  },
-  // minHeight: 48 – minimalna zalecana wysokość elementu dotykalnego (Apple HIG / Material)
-  input: {
-    width: 52,
-    minHeight: 48,
+
+  noteInput: {
     backgroundColor: '#0A0A0A',
-    borderWidth: 1,
-    borderColor: '#2C2C2E',
     borderRadius: 10,
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    textAlign: 'center',
-    paddingVertical: 4,
-  },
-  // Pole powt. nieco szersze – mieści widełki "10-15"
-  inputReps: {
-    width: 62,
-  },
-  inputDone: {
-    color: '#3A3A3C',
-    borderColor: '#1C1C1E',
-  },
-  inputWrap: {
-    position: 'relative',
-    width: 52,
-  },
-  arrow: {
-    position: 'absolute',
-    top: -7,
-    right: -3,
-    backgroundColor: '#000',
-    borderRadius: 4,
-  },
-  checkbox: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#3A3A3C',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkboxDone: {
-    backgroundColor: '#00E676',
-    borderColor: '#00E676',
-  },
-});
-
-// ─── Modal: edycja czasu przerwy ───────────────────────────────────────────────
-// Wyświetla dostępne presety – użytkownik ustawia czas przed zaliczeniem serii,
-// nie po. Dzięki temu stoper odlicza dokładnie tyle, ile zaplanował
-const REST_PRESETS = [30, 45, 60, 90, 120, 150, 180, 240];
-
-const RestEditModal = ({ visible, currentRest, onSelect, onClose }) => (
-  <Modal
-    visible={visible}
-    animationType="slide"
-    presentationStyle="pageSheet"
-    onRequestClose={onClose}
-  >
-    <View style={restModalStyles.screen}>
-      <View style={restModalStyles.handle} />
-      <Text style={restModalStyles.title}>Czas przerwy</Text>
-      <Text style={restModalStyles.sub}>Wybierz czas obowiązujący dla tego ćwiczenia</Text>
-
-      <ScrollView contentContainerStyle={restModalStyles.grid}>
-        {REST_PRESETS.map((sec) => {
-          const active = sec === currentRest;
-          const label  = sec >= 60
-            ? `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')} min`
-            : `${sec}s`;
-          return (
-            <TouchableOpacity
-              key={sec}
-              style={[restModalStyles.preset, active && restModalStyles.presetActive]}
-              onPress={() => { onSelect(sec); onClose(); }}
-              activeOpacity={0.7}
-            >
-              <Text style={[restModalStyles.presetText, active && restModalStyles.presetTextActive]}>
-                {label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-
-      <TouchableOpacity style={restModalStyles.cancelBtn} onPress={onClose} activeOpacity={0.7}>
-        <Text style={restModalStyles.cancelText}>Anuluj</Text>
-      </TouchableOpacity>
-    </View>
-  </Modal>
-);
-
-const restModalStyles = StyleSheet.create({
-  screen:          { flex: 1, backgroundColor: '#111111' },
-  handle:          { width: 36, height: 4, backgroundColor: '#3A3A3C', borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 20 },
-  title:           { fontSize: 22, fontWeight: '700', color: '#FFFFFF', paddingHorizontal: 24, marginBottom: 6 },
-  sub:             { fontSize: 14, color: '#8E8E93', paddingHorizontal: 24, marginBottom: 24 },
-  grid:            { flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingHorizontal: 20, paddingBottom: 20 },
-  preset: {
-    width: '45%',
-    backgroundColor: '#1C1C1E',
-    borderRadius: 16,
-    paddingVertical: 18,
-    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#2C2C2E',
+    color: '#FFFFFF',
+    fontSize: 13,
+    padding: 10,
+    minHeight: 60,
+    textAlignVertical: 'top',
+    marginBottom: 10,
   },
-  presetActive:     { backgroundColor: 'rgba(0,230,118,0.12)', borderColor: '#00E676' },
-  presetText:       { fontSize: 18, fontWeight: '600', color: '#FFFFFF' },
-  presetTextActive: { color: '#00E676' },
-  cancelBtn:        { margin: 20, backgroundColor: '#1C1C1E', borderRadius: 16, padding: 16, alignItems: 'center' },
-  cancelText:       { fontSize: 16, fontWeight: '600', color: '#8E8E93' },
+
+  // Animowany loader – stan przejściowy Cloud AI
+  loadingRow: {
+    backgroundColor: 'rgba(55,138,221,0.1)',
+    borderRadius: 8,
+    padding: 10,
+    borderWidth: 0.5,
+    borderColor: 'rgba(55,138,221,0.3)',
+  },
+  loadingText: { fontSize: 12, color: '#378ADD', fontStyle: 'italic' },
+
+  // Ustrukturyzowany wynik: Status / Wnioski / Decyzja
+  resultBlock: {
+    backgroundColor: '#0A0A0A',
+    borderRadius: 10,
+    overflow: 'hidden',
+    borderWidth: 0.5,
+    borderColor: '#2C2C2E',
+  },
+  resultRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderBottomWidth: 0.5,
+    borderColor: '#1C1C1E',
+    gap: 8,
+    alignItems: 'flex-start',
+  },
+  resultRowLast: { borderBottomWidth: 0 },
+  resultLabel:   { width: 60, fontSize: 11, fontWeight: '700', color: '#636366', letterSpacing: 0.4, marginTop: 1 },
+  resultValue:   { flex: 1, fontSize: 12, color: '#EBEBEB', lineHeight: 18 },
+  resultDecision:{ color: '#A78BFA', fontWeight: '600' },
+
+  emptyHint:     { paddingVertical: 4 },
+  emptyHintText: { fontSize: 12, color: '#636366', lineHeight: 18 },
 });
 
-// ─── Modal: opis techniki ćwiczenia ───────────────────────────────────────────
+// ─── Komponent: wiersz serii ───────────────────────────────────────────────────
+// aiOpen NIE jest uzależniony od done (Zadanie 5) – ikona 🤖 zawsze aktywna.
+// minHeight: 48 dla pól TextInput (Apple HIG / Material Design 3).
+// Pole reps akceptuje "8-12" (keyboardType="default").
+const SetRow = ({ setData, index, progression, onUpdate, onToggle }) => {
+  const { prevLog, kg, reps, rpe, done } = setData;
+  const [aiOpen, setAiOpen] = useState(false);
+
+  return (
+    <View style={rowStyles.wrapper}>
+      {/* Główny wiersz danych */}
+      <View style={rowStyles.row}>
+        {/* Numer serii */}
+        <View style={rowStyles.setNumWrapper}>
+          <Text style={rowStyles.setNum}>{index + 1}</Text>
+        </View>
+
+        {/* Kolumna "Poprzednio" – wyeksponowana dwuliniowo */}
+        <View style={rowStyles.prevGroup}>
+          <Text style={rowStyles.prevLabel}>POPRZEDNIO</Text>
+          <Text style={rowStyles.prevVal}>{prevLog}</Text>
+        </View>
+
+        {/* RPE */}
+        <TextInput
+          style={[rowStyles.input, done && rowStyles.inputDone]}
+          value={rpe}
+          onChangeText={(v) => onUpdate('rpe', v)}
+          keyboardType="numeric"
+          maxLength={2}
+          placeholder="RPE"
+          placeholderTextColor="#3A3A3C"
+          editable={!done}
+          selectTextOnFocus
+        />
+
+        {/* kg + strzałka */}
+        <View style={rowStyles.inputWrap}>
+          <TextInput
+            style={[rowStyles.input, done && rowStyles.inputDone]}
+            value={kg}
+            onChangeText={(v) => onUpdate('kg', v)}
+            keyboardType="decimal-pad"
+            maxLength={6}
+            placeholder="kg"
+            placeholderTextColor="#3A3A3C"
+            editable={!done}
+            selectTextOnFocus
+          />
+          <View style={rowStyles.arrow}>
+            <ProgressArrow value={kg} suggestedKg={progression?.suggestedKg} />
+          </View>
+        </View>
+
+        {/* Powtórzenia – format tekstowy umożliwia "8-12" */}
+        <TextInput
+          style={[rowStyles.input, rowStyles.inputReps, done && rowStyles.inputDone]}
+          value={reps}
+          onChangeText={(v) => onUpdate('reps', v)}
+          keyboardType="default"
+          maxLength={6}
+          placeholder="Powt."
+          placeholderTextColor="#3A3A3C"
+          editable={!done}
+          selectTextOnFocus
+        />
+
+        {/* Checkbox zaliczenia – minWidth/minHeight: 48 */}
+        <TouchableOpacity
+          style={[rowStyles.checkbox, done && rowStyles.checkboxDone]}
+          onPress={onToggle}
+          activeOpacity={0.7}
+        >
+          {done && <Ionicons name="checkmark" size={20} color="#000" />}
+        </TouchableOpacity>
+      </View>
+
+      {/* Wiersz "Sugerowane" + ikona 🤖 zawsze klikalná (Zadanie 5) */}
+      <View style={rowStyles.suggRow}>
+        <Text style={rowStyles.suggLabel}>Sugerowane: </Text>
+        <Text style={rowStyles.suggVal}>{progression?.label ?? '—'}</Text>
+        {/* done NIE blokuje przycisku AI – celowe */}
+        <TouchableOpacity
+          style={rowStyles.aiBtn}
+          onPress={() => setAiOpen((v) => !v)}
+          activeOpacity={0.7}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Text style={rowStyles.aiEmoji}>🤖</Text>
+          <Text style={rowStyles.aiToggleLabel}>{aiOpen ? 'Ukryj' : 'Analiza'}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Smart Insight Card – pozycjonowana bezpośrednio pod wierszem */}
+      {aiOpen && <SmartInsightCard progression={progression} />}
+    </View>
+  );
+};
+
+const rowStyles = StyleSheet.create({
+  wrapper: { marginBottom: 10 },
+  row:     { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+
+  setNumWrapper: { width: 22, alignItems: 'center' },
+  setNum:        { fontSize: 13, fontWeight: '700', color: '#636366' },
+
+  prevGroup: { flex: 1, minWidth: 0 },
+  prevLabel: { fontSize: 9, color: '#636366', fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 2 },
+  prevVal:   { fontSize: 13, color: '#8E8E93', fontWeight: '600' },
+
+  input: {
+    width: 50, minHeight: 48,
+    backgroundColor: '#0A0A0A',
+    borderWidth: 1, borderColor: '#2C2C2E',
+    borderRadius: 10,
+    fontSize: 16, fontWeight: '700', color: '#FFFFFF',
+    textAlign: 'center', paddingVertical: 4,
+  },
+  inputReps:  { width: 58 },
+  inputDone:  { color: '#3A3A3C', borderColor: '#1C1C1E' },
+  inputWrap:  { position: 'relative', width: 50 },
+  arrow:      { position: 'absolute', top: -7, right: -3, backgroundColor: '#000', borderRadius: 4 },
+
+  checkbox:     { width: 48, height: 48, minWidth: 48, borderRadius: 12, borderWidth: 1.5, borderColor: '#3A3A3C', justifyContent: 'center', alignItems: 'center' },
+  checkboxDone: { backgroundColor: '#00E676', borderColor: '#00E676' },
+
+  // Wiersz sugestii z przyciskiem AI
+  suggRow:     { flexDirection: 'row', alignItems: 'center', paddingLeft: 28, gap: 4 },
+  suggLabel:   { fontSize: 11, color: '#636366' },
+  suggVal:     { fontSize: 11, color: '#A78BFA', fontWeight: '600', flex: 1 },
+  aiBtn:       { flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 3, paddingHorizontal: 6, backgroundColor: 'rgba(0,230,118,0.08)', borderRadius: 8, borderWidth: 0.5, borderColor: 'rgba(0,230,118,0.2)' },
+  aiEmoji:     { fontSize: 12 },
+  aiToggleLabel:{ fontSize: 10, color: '#00E676', fontWeight: '600' },
+});
+
+// ─── Modal: opis techniki ──────────────────────────────────────────────────────
 const ExerciseInfoModal = ({ visible, exercise, onClose }) => (
-  <Modal
-    visible={visible}
-    animationType="slide"
-    presentationStyle="pageSheet"
-    onRequestClose={onClose}
-  >
+  <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
     <View style={infoStyles.screen}>
       <View style={infoStyles.handle} />
       <TouchableOpacity style={infoStyles.closeBtn} onPress={onClose} activeOpacity={0.7}>
@@ -365,7 +634,7 @@ const infoStyles = StyleSheet.create({
   subtitle:         { fontSize: 13, color: '#8E8E93', marginBottom: 20 },
   imagePlaceholder: { height: 160, backgroundColor: '#1C1C1E', borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginBottom: 24, gap: 10, borderWidth: 0.5, borderColor: '#2C2C2E' },
   imageText:        { fontSize: 13, color: '#3A3A3C' },
-  sectionLabel:     { fontSize: 12, fontWeight: '700', color: '#636366', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 },
+  sectionLabel:     { fontSize: 11, fontWeight: '700', color: '#636366', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 },
   description:      { fontSize: 15, color: '#EBEBEB', lineHeight: 23, marginBottom: 24 },
   muscleRow:        { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   muscleDot:        { width: 6, height: 6, borderRadius: 3, backgroundColor: '#00E676' },
@@ -387,10 +656,9 @@ const formatDuration = (sec) => {
 
 const detectPRs = (exercises) =>
   exercises.reduce((acc, ex) => {
-    const prs = ex.sets.filter((s) => {
-      if (!s.done || !s.kg) return false;
-      return parseFloat(s.kg) > parseFloat(s.prevLog.split('×')[0]);
-    });
+    const prs = ex.sets.filter(
+      (s) => s.done && s.kg && parseFloat(s.kg) > parseFloat(s.prevLog.split('×')[0])
+    );
     if (prs.length > 0) {
       const best = prs.reduce((b, s) => parseFloat(s.kg) > parseFloat(b.kg) ? s : b);
       acc.push({ name: ex.name, kg: best.kg, reps: best.reps });
@@ -398,28 +666,21 @@ const detectPRs = (exercises) =>
     return acc;
   }, []);
 
-// ─── Modal: Podsumowanie treningu ─────────────────────────────────────────────
+// ─── Modal: podsumowanie treningu ─────────────────────────────────────────────
 function WorkoutSummaryModal({ visible, onClose, totalSec, totalTonnage, exercises, onSave }) {
   const cars     = Math.floor(totalTonnage / KG_PER_CAR);
   const prs      = detectPRs(exercises);
   const doneSets = exercises.reduce((a, ex) => a + ex.sets.filter((s) => s.done).length, 0);
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={sumStyles.screen}>
         <View style={sumStyles.handle} />
         <ScrollView contentContainerStyle={sumStyles.scroll} showsVerticalScrollIndicator={false}>
-
           <View style={sumStyles.hero}>
             <Text style={sumStyles.heroLabel}>TRENING UKOŃCZONY</Text>
             <Text style={sumStyles.heroTitle}>Brawo! 💪</Text>
           </View>
-
           <View style={sumStyles.grid}>
             <View style={sumStyles.card}>
               <Ionicons name="time-outline" size={22} color="#00E676" style={{ marginBottom: 8 }} />
@@ -440,7 +701,7 @@ function WorkoutSummaryModal({ visible, onClose, totalSec, totalTonnage, exercis
                   </Text>
                   {cars > 0 && (
                     <Text style={sumStyles.cardSub}>
-                      Przerzuciłeś równowartość {cars} {cars === 1 ? 'samochodu' : 'samochodów'}!
+                      Równowartość {cars} {cars === 1 ? 'samochodu' : 'samochodów'} osobowych!
                     </Text>
                   )}
                 </View>
@@ -452,13 +713,11 @@ function WorkoutSummaryModal({ visible, onClose, totalSec, totalTonnage, exercis
               </View>
             </View>
           </View>
-
           <View style={sumStyles.heatmap}>
             <Ionicons name="body-outline" size={40} color="#3A3A3C" />
             <Text style={sumStyles.heatmapTitle}>Heatmapa mięśni</Text>
             <Text style={sumStyles.heatmapSub}>Tu pojawi się mapa przetrenowanych partii ciała</Text>
           </View>
-
           {prs.length > 0 && (
             <>
               <Text style={sumStyles.sectionTitle}>Nowe rekordy 🏆</Text>
@@ -478,14 +737,12 @@ function WorkoutSummaryModal({ visible, onClose, totalSec, totalTonnage, exercis
               ))}
             </>
           )}
-
           {prs.length === 0 && (
             <View style={sumStyles.noPr}>
               <Text style={sumStyles.noPrText}>Brak nowych rekordów – konsekwencja to klucz. 💪</Text>
             </View>
           )}
         </ScrollView>
-
         <View style={sumStyles.footer}>
           <TouchableOpacity style={sumStyles.saveBtn} onPress={onSave} activeOpacity={0.85}>
             <Text style={sumStyles.saveBtnText}>Zapisz do historii</Text>
@@ -505,34 +762,17 @@ const sumStyles = StyleSheet.create({
   heroLabel:    { fontSize: 12, fontWeight: '700', color: '#00E676', letterSpacing: 2, marginBottom: 6 },
   heroTitle:    { fontSize: 36, fontWeight: '800', color: '#FFFFFF' },
   grid:         { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 16, marginBottom: 14 },
-  card: {
-    flex: 1, minWidth: '45%',
-    backgroundColor: '#1C1C1E',
-    borderRadius: 18, padding: 16,
-    borderWidth: 0.5, borderColor: '#2C2C2E',
-  },
+  card:         { flex: 1, minWidth: '45%', backgroundColor: '#1C1C1E', borderRadius: 18, padding: 16, borderWidth: 0.5, borderColor: '#2C2C2E' },
   cardWide:     { flexBasis: '100%', flex: 0 },
   cardRow:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardLabel:    { fontSize: 12, color: '#8E8E93', marginBottom: 4 },
   cardValue:    { fontSize: 24, fontWeight: '700', color: '#FFFFFF' },
   cardSub:      { fontSize: 12, color: '#636366', marginTop: 6, lineHeight: 17 },
-  heatmap: {
-    marginHorizontal: 16, marginBottom: 20,
-    borderRadius: 18, height: 140,
-    backgroundColor: '#1C1C1E',
-    justifyContent: 'center', alignItems: 'center',
-    gap: 8, borderWidth: 1, borderColor: '#2C2C2E', borderStyle: 'dashed',
-  },
+  heatmap:      { marginHorizontal: 16, marginBottom: 20, borderRadius: 18, height: 140, backgroundColor: '#1C1C1E', justifyContent: 'center', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#2C2C2E', borderStyle: 'dashed' },
   heatmapTitle: { fontSize: 14, fontWeight: '500', color: '#3A3A3C' },
   heatmapSub:   { fontSize: 12, color: '#3A3A3C', textAlign: 'center', paddingHorizontal: 24 },
   sectionTitle: { fontSize: 18, fontWeight: '700', color: '#FFFFFF', paddingHorizontal: 20, marginBottom: 12 },
-  prCard: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#1C1C1E',
-    marginHorizontal: 16, marginBottom: 10,
-    borderRadius: 16, padding: 14, gap: 12,
-    borderWidth: 0.5, borderColor: '#2C2C2E',
-  },
+  prCard:       { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1C1C1E', marginHorizontal: 16, marginBottom: 10, borderRadius: 16, padding: 14, gap: 12, borderWidth: 0.5, borderColor: '#2C2C2E' },
   prTrophy:     { width: 38, height: 38, borderRadius: 11, backgroundColor: 'rgba(255,179,71,0.15)', justifyContent: 'center', alignItems: 'center' },
   prName:       { fontSize: 14, fontWeight: '600', color: '#FFFFFF' },
   prVal:        { fontSize: 12, color: '#8E8E93', marginTop: 3 },
@@ -546,28 +786,30 @@ const sumStyles = StyleSheet.create({
   saveBtnSub:   { fontSize: 12, color: 'rgba(0,0,0,0.5)', marginTop: 4 },
 });
 
-// ─── Komponent: karta pojedynczego ćwiczenia ──────────────────────────────────
-// Wydzielona poza główny komponent – unika re-renderu wszystkich kart
-// przy każdym ticku stopera głównego (co sekundę)
+// ─── Komponent: karta ćwiczenia ────────────────────────────────────────────────
+// Progresja APRE obliczana raz na render karty i przekazywana do wszystkich SetRow –
+// unikamy wielokrotnego wywołania kalkulatora dla n serii tego samego ćwiczenia
 const ExerciseCard = ({
-  exercise,
-  exIndex,
-  onUpdateSet,
-  onToggleSet,
-  onAddSet,
-  onRestChange,
-  onInfoPress,
+  exercise, exIndex,
+  onUpdateSet, onToggleSet, onAddSet, onRestChange, onInfoPress,
 }) => {
   const [restModalVisible, setRestModalVisible] = useState(false);
 
   const formatRest = (sec) => {
-    if (sec >= 60) return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')} min`;
-    return `${sec}s`;
+    if (sec < 60) return `${sec} s`;
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return s === 0 ? `${m}:00 min` : `${m}:${String(s).padStart(2, '0')} min`;
   };
+
+  const progression = useMemo(
+    () => calculateAPRE(exercise.sets, exercise.sets[0]?.prevLog),
+    [exercise.sets]
+  );
 
   return (
     <View style={cardStyles.card}>
-      {/* Nagłówek karty */}
+      {/* Nagłówek karty ćwiczenia */}
       <View style={cardStyles.header}>
         <View style={{ flex: 1, marginRight: 10 }}>
           <Text style={cardStyles.name}>{exercise.name}</Text>
@@ -578,28 +820,26 @@ const ExerciseCard = ({
         </TouchableOpacity>
       </View>
 
-      {/* Klikalny element czasu przerwy – otwiera modal wyboru przed zaliczeniem serii */}
+      {/* Chip przerwy – otwiera drum-roller (30s – 5:00 min, krok 5s) */}
       <TouchableOpacity
         style={cardStyles.restChip}
         onPress={() => setRestModalVisible(true)}
         activeOpacity={0.7}
       >
         <Ionicons name="timer-outline" size={14} color="#8E8E93" />
-        <Text style={cardStyles.restChipText}>
-          Przerwa: {formatRest(exercise.restDuration)}
-        </Text>
+        <Text style={cardStyles.restChipText}>Przerwa: {formatRest(exercise.restDuration)}</Text>
         <Ionicons name="chevron-down" size={13} color="#3A3A3C" />
       </TouchableOpacity>
 
       {/* Nagłówki kolumn */}
       <View style={cardStyles.colHeaders}>
-        <View style={{ width: 24 }} />
+        <View style={{ width: 22 }} />
         <View style={{ flex: 1 }}>
-          <Text style={cardStyles.colH}>Poprzednio / Suger.</Text>
+          <Text style={cardStyles.colH}>Poprzednio</Text>
         </View>
-        <Text style={[cardStyles.colH, { width: 52, textAlign: 'center' }]}>RPE</Text>
-        <Text style={[cardStyles.colH, { width: 52, textAlign: 'center' }]}>kg</Text>
-        <Text style={[cardStyles.colH, { width: 62, textAlign: 'center' }]}>Powt.</Text>
+        <Text style={[cardStyles.colH, { width: 50, textAlign: 'center' }]}>RPE</Text>
+        <Text style={[cardStyles.colH, { width: 50, textAlign: 'center' }]}>kg</Text>
+        <Text style={[cardStyles.colH, { width: 58, textAlign: 'center' }]}>Powt.</Text>
         <Text style={[cardStyles.colH, { width: 48, textAlign: 'center' }]}>✓</Text>
       </View>
 
@@ -608,6 +848,7 @@ const ExerciseCard = ({
           key={set.id}
           setData={set}
           index={idx}
+          progression={progression}
           onUpdate={(field, value) => onUpdateSet(exIndex, set.id, field, value)}
           onToggle={() => onToggleSet(exIndex, set.id)}
         />
@@ -617,24 +858,20 @@ const ExerciseCard = ({
 
       <View style={cardStyles.actions}>
         <TouchableOpacity
-          style={[cardStyles.actionBtn, cardStyles.actionBtnAdd]}
+          style={[cardStyles.actionBtn, cardStyles.actionAdd]}
           onPress={() => onAddSet(exIndex)}
           activeOpacity={0.7}
         >
           <Ionicons name="add" size={15} color="#00E676" />
-          <Text style={cardStyles.actionBtnAddText}>Dodaj serię</Text>
+          <Text style={cardStyles.actionAddText}>Dodaj serię</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[cardStyles.actionBtn, cardStyles.actionBtnSwap]}
-          activeOpacity={0.7}
-        >
+        <TouchableOpacity style={[cardStyles.actionBtn, cardStyles.actionSwap]} activeOpacity={0.7}>
           <Ionicons name="swap-horizontal" size={15} color="#8E8E93" />
-          <Text style={cardStyles.actionBtnSwapText}>Zamień</Text>
+          <Text style={cardStyles.actionSwapText}>Zamień</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Modal edycji czasu przerwy dla tego konkretnego ćwiczenia */}
-      <RestEditModal
+      <RestPickerModal
         visible={restModalVisible}
         currentRest={exercise.restDuration}
         onSelect={(sec) => onRestChange(exIndex, sec)}
@@ -645,49 +882,22 @@ const ExerciseCard = ({
 };
 
 const cardStyles = StyleSheet.create({
-  card: {
-    backgroundColor: '#1C1C1E',
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 0.5,
-    borderColor: '#2C2C2E',
-  },
-  header:  { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
-  name:    { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
-  muscles: { fontSize: 12, color: '#8E8E93', marginTop: 3 },
-  infoBtn: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#2C2C2E', justifyContent: 'center', alignItems: 'center' },
-
-  // Chip przerwy – klikalny element z ikoną stopera. Umieszczony przed seriami,
-  // żeby użytkownik ustawił czas zanim zacznie zaliczać serie
-  restChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-    backgroundColor: '#2C2C2E',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    marginBottom: 14,
-  },
-  restChipText: { fontSize: 13, color: '#8E8E93', fontWeight: '500' },
-
-  colHeaders: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
-  colH:       { fontSize: 10, color: '#636366', fontWeight: '500', letterSpacing: 0.3 },
-
-  divider: { height: 0.5, backgroundColor: '#2C2C2E', marginVertical: 14 },
-  actions: { flexDirection: 'row', gap: 8 },
-  actionBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'center', gap: 6,
-    borderRadius: 12, paddingVertical: 11, borderWidth: 1,
-  },
-  actionBtnAdd:      { backgroundColor: 'rgba(0,230,118,0.08)', borderColor: 'rgba(0,230,118,0.2)' },
-  actionBtnAddText:  { fontSize: 13, fontWeight: '500', color: '#00E676' },
-  actionBtnSwap:     { backgroundColor: '#0A0A0A', borderColor: '#2C2C2E' },
-  actionBtnSwapText: { fontSize: 13, fontWeight: '500', color: '#8E8E93' },
+  card:          { backgroundColor: '#121212', marginHorizontal: 16, marginBottom: 16, borderRadius: 20, padding: 16, borderWidth: 0.5, borderColor: '#2C2C2E' },
+  header:        { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
+  name:          { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
+  muscles:       { fontSize: 12, color: '#8E8E93', marginTop: 3 },
+  infoBtn:       { width: 32, height: 32, borderRadius: 10, backgroundColor: '#2C2C2E', justifyContent: 'center', alignItems: 'center' },
+  restChip:      { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: '#2C2C2E', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, marginBottom: 14 },
+  restChipText:  { fontSize: 13, color: '#8E8E93', fontWeight: '500' },
+  colHeaders:    { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  colH:          { fontSize: 10, color: '#636366', fontWeight: '500', letterSpacing: 0.3 },
+  divider:       { height: 0.5, backgroundColor: '#2C2C2E', marginVertical: 14 },
+  actions:       { flexDirection: 'row', gap: 8 },
+  actionBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 12, paddingVertical: 11, borderWidth: 1 },
+  actionAdd:     { backgroundColor: 'rgba(0,230,118,0.08)', borderColor: 'rgba(0,230,118,0.2)' },
+  actionAddText: { fontSize: 13, fontWeight: '500', color: '#00E676' },
+  actionSwap:    { backgroundColor: '#0A0A0A', borderColor: '#2C2C2E' },
+  actionSwapText:{ fontSize: 13, fontWeight: '500', color: '#8E8E93' },
 });
 
 // ─── Główny komponent ekranu ───────────────────────────────────────────────────
@@ -706,7 +916,7 @@ export default function ActiveWorkoutScreen({ navigation }) {
   const restIntervalRef = useRef(null);
   const restAnim        = useRef(new Animated.Value(200)).current;
 
-  // Główny stoper treningu
+  // Główny stoper treningu – niezależny od stopera przerwy
   useEffect(() => {
     const id = setInterval(() => {
       if (!paused) setTimerSec((s) => s + 1);
@@ -714,7 +924,7 @@ export default function ActiveWorkoutScreen({ navigation }) {
     return () => clearInterval(id);
   }, [paused]);
 
-  // Akcelerometr: gwałtowne potrząśnięcie (oś Z > 1.8g) = Shake-to-Confirm
+  // Akcelerometr Shake-to-Confirm: oś Z > 1.8g = potrząśnięcie
   useEffect(() => {
     Accelerometer.setUpdateInterval(300);
     const sub = Accelerometer.addListener(({ z }) => {
@@ -735,7 +945,9 @@ export default function ActiveWorkoutScreen({ navigation }) {
     setRestSec(duration);
     setRestTotalSec(duration);
     setRestActive(true);
-    Animated.spring(restAnim, { toValue: 0, useNativeDriver: true, tension: 65, friction: 11 }).start();
+    Animated.spring(restAnim, {
+      toValue: 0, useNativeDriver: true, tension: 65, friction: 11,
+    }).start();
     clearInterval(restIntervalRef.current);
     restIntervalRef.current = setInterval(() => {
       setRestSec((prev) => {
@@ -751,16 +963,15 @@ export default function ActiveWorkoutScreen({ navigation }) {
       .start(() => setRestActive(false));
   }, []);
 
-  // Zalicza pierwszą niezaliczoną serię w całym treningu (dla Shake-to-Confirm)
   const confirmFirstPendingSet = useCallback(() => {
     setExercises((prev) => {
       let found = false;
       return prev.map((ex) => ({
         ...ex,
-        sets: ex.sets.map((s) => {
+        sets: ex.sets.map((s, si) => {
           if (!s.done && !found) {
             found = true;
-            showRestBanner(`${ex.name} – seria`, ex.restDuration);
+            showRestBanner(`${ex.name} – s.${si + 1}`, ex.restDuration);
             return { ...s, done: true };
           }
           return s;
@@ -780,13 +991,11 @@ export default function ActiveWorkoutScreen({ navigation }) {
 
   const handleToggleSet = useCallback((exIdx, setId) => {
     setExercises((prev) => {
-      const ex = prev[exIdx];
+      const ex  = prev[exIdx];
       const set = ex.sets.find((s) => s.id === setId);
-      if (set?.done) return prev; // zaliczonej serii nie cofamy
-      showRestBanner(
-        `${ex.name} – seria ${ex.sets.findIndex((s) => s.id === setId) + 1}`,
-        ex.restDuration
-      );
+      if (set?.done) return prev;
+      const si = ex.sets.findIndex((s) => s.id === setId);
+      showRestBanner(`${ex.name} – s.${si + 1}`, ex.restDuration);
       return prev.map((e, i) =>
         i !== exIdx ? e
           : { ...e, sets: e.sets.map((s) => s.id === setId ? { ...s, done: true } : s) }
@@ -803,19 +1012,14 @@ export default function ActiveWorkoutScreen({ navigation }) {
           ...ex,
           sets: [...ex.sets, {
             id: Date.now().toString(),
-            prevLog:   last?.prevLog   ?? '—',
-            suggested: last?.suggested ?? '—',
-            kg:        last?.kg        ?? '',
-            reps:      last?.reps      ?? '',
-            rpe:       '',
-            done:      false,
+            prevLog: last?.prevLog ?? '—',
+            kg: last?.kg ?? '', reps: last?.reps ?? '', rpe: '', done: false,
           }],
         };
       })
     );
   }, []);
 
-  // Zmiana czasu przerwy dla konkretnego ćwiczenia bez ruszania pozostałych
   const handleRestChange = useCallback((exIdx, sec) => {
     setExercises((prev) =>
       prev.map((ex, i) => i !== exIdx ? ex : { ...ex, restDuration: sec })
@@ -829,7 +1033,7 @@ export default function ActiveWorkoutScreen({ navigation }) {
       ), 0
     ), [exercises]);
 
-  // Segmentowy pasek: dla każdego ćwiczenia ułamek zaliczonych serii
+  // Ułamkowe wypełnienie segmentu paska postępu
   const segmentFill = (ex) => {
     const done = ex.sets.filter((s) => s.done).length;
     return ex.sets.length === 0 ? 0 : done / ex.sets.length;
@@ -840,7 +1044,7 @@ export default function ActiveWorkoutScreen({ navigation }) {
       style={styles.screen}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* ── Segmentowy pasek postępu ── */}
+      {/* ── Segmentowy pasek postępu (Instagram Stories) ── */}
       <View style={styles.segmentBar}>
         {exercises.map((ex) => {
           const fill = segmentFill(ex);
@@ -864,7 +1068,7 @@ export default function ActiveWorkoutScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* ── Półprzezroczysty stoper ── */}
+      {/* ── Półprzezroczysty stoper – rgba wtapia się w dark mode ── */}
       <View style={styles.timerStrip}>
         <View>
           <Text style={styles.timerLabel}>Czas treningu</Text>
@@ -880,7 +1084,7 @@ export default function ActiveWorkoutScreen({ navigation }) {
         </View>
       </View>
 
-      {/* ── Przewijalna lista wszystkich ćwiczeń – brak paginacji ── */}
+      {/* ── Ciągła, przewijana lista ćwiczeń ── */}
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
@@ -899,21 +1103,16 @@ export default function ActiveWorkoutScreen({ navigation }) {
           />
         ))}
 
-        {/* Separator końca treningu */}
         <View style={styles.endOfWorkout}>
           <Ionicons name="flag-outline" size={24} color="#3A3A3C" />
           <Text style={styles.endOfWorkoutText}>Koniec planu treningowego</Text>
-          <TouchableOpacity
-            style={styles.finishBtn}
-            onPress={() => setSummaryVisible(true)}
-            activeOpacity={0.85}
-          >
+          <TouchableOpacity style={styles.finishBtn} onPress={() => setSummaryVisible(true)} activeOpacity={0.85}>
             <Text style={styles.finishBtnText}>Zakończ i podsumuj</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
 
-      {/* ── Baner stopera przerwy ── */}
+      {/* ── Baner stopera przerwy (Animated.spring od dołu) ── */}
       {restActive && (
         <Animated.View style={[styles.restBanner, { transform: [{ translateY: restAnim }] }]}>
           <View style={styles.restTop}>
@@ -923,14 +1122,10 @@ export default function ActiveWorkoutScreen({ navigation }) {
               <Text style={styles.restDoneText}>Zaliczona</Text>
             </View>
           </View>
-
-          {/* Pasek postępu przerwy – zmniejsza się proporcjonalnie do pozostałego czasu */}
           <View style={styles.restTrack}>
             <View style={[styles.restFill, { width: `${(restSec / restTotalSec) * 100}%` }]} />
           </View>
-
           <Text style={styles.restTimerValue}>{formatTime(restSec)}</Text>
-
           <View style={styles.restBtns}>
             <TouchableOpacity style={styles.restBtn} onPress={() => setRestSec((s) => s + 15)} activeOpacity={0.7}>
               <Text style={styles.restBtnText}>+15s</Text>
@@ -945,7 +1140,6 @@ export default function ActiveWorkoutScreen({ navigation }) {
         </Animated.View>
       )}
 
-      {/* ── Modals ── */}
       <ExerciseInfoModal
         visible={infoVisible}
         exercise={infoExercise}
@@ -966,7 +1160,7 @@ export default function ActiveWorkoutScreen({ navigation }) {
 // ─── Style głównego ekranu ─────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   screen:        { flex: 1, backgroundColor: '#000000' },
-  scrollContent: { paddingBottom: 220 },
+  scrollContent: { paddingBottom: 240 },
 
   segmentBar:   { flexDirection: 'row', gap: 4, paddingHorizontal: 16, paddingTop: 54, paddingBottom: 10 },
   segment:      { flex: 1, height: 3, borderRadius: 2, overflow: 'hidden', flexDirection: 'row' },
@@ -979,42 +1173,18 @@ const styles = StyleSheet.create({
   endButton:     { backgroundColor: 'rgba(255,69,58,0.15)', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8 },
   endButtonText: { fontSize: 14, fontWeight: '600', color: '#FF453A' },
 
-  timerStrip: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: 'rgba(28,28,30,0.85)',
-    marginHorizontal: 16, marginBottom: 12,
-    borderRadius: 16, padding: 12,
-    borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.07)',
-  },
+  timerStrip:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(28,28,30,0.85)', marginHorizontal: 16, marginBottom: 12, borderRadius: 16, padding: 12, borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.07)' },
   timerLabel:    { fontSize: 11, color: '#636366', marginBottom: 2 },
   timerValue:    { fontSize: 30, fontWeight: '700', color: '#00E676', letterSpacing: 2, fontVariant: ['tabular-nums'] },
   timerControls: { flexDirection: 'row', gap: 8 },
   timerBtn:      { width: 34, height: 34, borderRadius: 10, backgroundColor: '#2C2C2E', justifyContent: 'center', alignItems: 'center' },
 
-  endOfWorkout: {
-    alignItems: 'center',
-    padding: 32,
-    gap: 12,
-  },
+  endOfWorkout:     { alignItems: 'center', padding: 32, gap: 12 },
   endOfWorkoutText: { fontSize: 14, color: '#3A3A3C' },
-  finishBtn: {
-    backgroundColor: '#1C1C1E',
-    borderRadius: 16,
-    paddingHorizontal: 28,
-    paddingVertical: 14,
-    borderWidth: 0.5,
-    borderColor: '#2C2C2E',
-    marginTop: 4,
-  },
-  finishBtnText: { fontSize: 15, fontWeight: '600', color: '#8E8E93' },
+  finishBtn:        { backgroundColor: '#1C1C1E', borderRadius: 16, paddingHorizontal: 28, paddingVertical: 14, borderWidth: 0.5, borderColor: '#2C2C2E', marginTop: 4 },
+  finishBtnText:    { fontSize: 15, fontWeight: '600', color: '#8E8E93' },
 
-  restBanner: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: 'rgba(10,10,10,0.97)',
-    borderTopLeftRadius: 22, borderTopRightRadius: 22,
-    padding: 20,
-    borderTopWidth: 0.5, borderColor: '#2C2C2E',
-  },
+  restBanner:    { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(10,10,10,0.97)', borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20, borderTopWidth: 0.5, borderColor: '#2C2C2E' },
   restTop:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   restLabel:     { fontSize: 13, color: '#8E8E93', fontWeight: '500', flex: 1, marginRight: 10 },
   restDonePill:  { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,230,118,0.12)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },

@@ -40,6 +40,7 @@ export default function TrainingScreen({ navigation }) {
             <Text style={styles.title}>Trening</Text>
           </View>
 
+          {/* Główne CTA – start pustej sesji treningowej */}
           <TouchableOpacity
             style={styles.startButton}
             activeOpacity={0.85}
@@ -54,12 +55,13 @@ export default function TrainingScreen({ navigation }) {
             </View>
           </TouchableOpacity>
 
-          {/* Fioletowy akcent odróżnia sekcję "Baza" od zielonego CTA –
-              każda kluczowa akcja ma swój kolor w systemie wizualnym aplikacji */}
+          {/* Nawigacja do biblioteki ćwiczeń i kreatora planów.
+              Fioletowy akcent (#A78BFA) odróżnia tę akcję od zielonego CTA –
+              każdy moduł aplikacji operuje na własnym kolorze w palecie akcentów */}
           <TouchableOpacity
             style={styles.libraryButton}
             activeOpacity={0.75}
-            onPress={() => {}}
+            onPress={() => navigation.navigate('ExercisesLibrary')}
           >
             <View style={styles.libraryIconWrapper}>
               <Ionicons name="search" size={22} color="#A78BFA" />
@@ -87,7 +89,7 @@ const styles = StyleSheet.create({
   screen:           { flex: 1, backgroundColor: '#000000' },
   contentContainer: { paddingBottom: 32 },
 
-  header: { paddingTop: 60, paddingHorizontal: 20, paddingBottom: 24 },
+  header:   { paddingTop: 60, paddingHorizontal: 20, paddingBottom: 24 },
   greeting: { fontSize: 14, color: '#8E8E93', marginBottom: 4 },
   title:    { fontSize: 32, fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.3 },
 
@@ -114,7 +116,7 @@ const styles = StyleSheet.create({
   libraryButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1C1C1E',
+    backgroundColor: '#121212',
     marginHorizontal: 16,
     marginBottom: 24,
     borderRadius: 18,
@@ -131,8 +133,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   libraryTextGroup: { flex: 1 },
-  libraryTitle: { fontSize: 15, fontWeight: '600', color: '#FFFFFF' },
-  librarySub:   { fontSize: 12, color: '#8E8E93', marginTop: 3 },
+  libraryTitle:     { fontSize: 15, fontWeight: '600', color: '#FFFFFF' },
+  librarySub:       { fontSize: 12, color: '#8E8E93', marginTop: 3 },
 
   sectionHeader: {
     flexDirection: 'row',
@@ -147,7 +149,7 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1C1C1E',
+    backgroundColor: '#121212',
     marginHorizontal: 16,
     marginBottom: 12,
     borderRadius: 18,

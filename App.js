@@ -4,10 +4,11 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 
-import TrainingScreen      from './screens/TrainingScreen';
-import ActiveWorkoutScreen from './screens/ActiveWorkoutScreen';
-import DietScreen          from './screens/DietScreen';
-import ProfileScreen       from './screens/ProfileScreen';
+import TrainingScreen          from './screens/TrainingScreen';
+import ActiveWorkoutScreen     from './screens/ActiveWorkoutScreen';
+import ExercisesLibraryScreen  from './screens/ExercisesLibraryScreen';
+import DietScreen              from './screens/DietScreen';
+import ProfileScreen           from './screens/ProfileScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -17,20 +18,18 @@ const AppDarkTheme = {
   colors: { ...DefaultTheme.colors, background: '#000000' },
 };
 
-// TrainingStack łączy listę treningów z ekranem aktywnego treningu.
-// ActiveWorkout wysuwa się jako fullScreenModal – zakładki dolne znikają
-// podczas treningu, dokładnie jak w aplikacjach Hevy i Strong
+// TrainingStack obejmuje cały moduł treningowy – Dashboard, Bibliotekę ćwiczeń
+// i ekran aktywnego treningu. ActiveWorkout prezentowany jako fullScreenModal,
+// co ukrywa Bottom Tabs podczas sesji – identyczny wzorzec jak Hevy / Strong
 function TrainingStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="TrainingHome"  component={TrainingScreen} />
+      <Stack.Screen name="TrainingHome"     component={TrainingScreen} />
+      <Stack.Screen name="ExercisesLibrary" component={ExercisesLibraryScreen} />
       <Stack.Screen
         name="ActiveWorkout"
         component={ActiveWorkoutScreen}
-        options={{
-          presentation: 'fullScreenModal',
-          animation: 'slide_from_bottom',
-        }}
+        options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }}
       />
     </Stack.Navigator>
   );
@@ -60,7 +59,6 @@ export default function App() {
           },
         })}
       >
-        {/* TrainingStack zamiast TrainingScreen – daje dostęp do ActiveWorkout */}
         <Tab.Screen name="Trening" component={TrainingStack} />
         <Tab.Screen name="Dieta"   component={DietScreen} />
         <Tab.Screen name="Profil"  component={ProfileScreen} />
