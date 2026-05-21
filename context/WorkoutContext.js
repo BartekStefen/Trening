@@ -1,27 +1,72 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
-// Globalny kontekst przechowujący historię treningów.
-// Wydzielony poza nawigację, żeby zarówno AktywnyTrening jak i Profil
-// miały dostęp do tych samych danych bez prop drillingu
+// ─── Kontekst globalny aplikacji fitness ──────────────────────────────────────
+// Stan globalny: zminimalizowany trening, plany użytkownika, historia
 const WorkoutContext = createContext(null);
 
 export function WorkoutProvider({ children }) {
-  const [history, setHistory] = useState([]);
+  const [activeWorkout, setActiveWorkout]   = useState(null);
+  const [customPlans, setCustomPlans]       = useState([]);
+  const [workoutHistory, setWorkoutHistory] = useState([]);
 
-  // Dodaje ukończony trening do historii – docelowo zsynchronizowane z Firestore
-  const saveWorkout = (workoutData) => {
-    setHistory((prev) => [
-      { ...workoutData, id: Date.now().toString(), savedAt: new Date().toISOString() },
+  // Timer tła – bije nawet gdy ActiveWorkoutScreen jest odmontowany
+  const bgIntervalRef = useRef(null);
+  const bgTimerRef    = useRef(0);
+
+  const startBgTimer = useCallback((initialSec) => {
+    bgTimerRef.current = initialSec;
+    clearInterval(bgIntervalRef.current);
+    bgIntervalRef.current = setInterval(() => {
+      bgTimerRef.current += 1;
+      setActiveWorkout((prev) => prev ? { ...prev, timerSec: bgTimerRef.current } : prev);
+    }, 1000);
+  }, []);
+
+  const stopBgTimer = useCallback(() => {
+    clearInterval(bgIntervalRef.current);
+    bgIntervalRef.current = null;
+  }, []);
+
+  const minimizeWorkout = useCallback((data) => {
+    setActiveWorkout(data);
+    startBgTimer(data.timerSec ?? 0);
+  }, [startBgTimer]);
+
+  const clearActiveWorkout = useCallback(() => {
+    stopBgTimer();
+    setActiveWorkout(null);
+  }, [stopBgTimer]);
+
+  const addCustomPlan = useCallback((plan) => {
+    setCustomPlans((prev) => [
+      { ...plan, id: Date.now().toString(), createdAt: new Date().toISOString() },
       ...prev,
     ]);
-  };
+  }, []);
+
+  const saveWorkoutToHistory = useCallback((data) => {
+    stopBgTimer();
+    setWorkoutHistory((prev) => [
+      { ...data, id: Date.now().toString(), savedAt: new Date().toISOString() },
+      ...prev,
+    ]);
+    setActiveWorkout(null);
+  }, [stopBgTimer]);
+
+  useEffect(() => () => clearInterval(bgIntervalRef.current), []);
 
   return (
-    <WorkoutContext.Provider value={{ history, saveWorkout }}>
+    <WorkoutContext.Provider value={{
+      activeWorkout, customPlans, workoutHistory,
+      minimizeWorkout, clearActiveWorkout, addCustomPlan, saveWorkoutToHistory,
+    }}>
       {children}
     </WorkoutContext.Provider>
   );
 }
 
-// Hook skracający import w komponentach – zamiast importować useContext i WorkoutContext osobno
-export const useWorkout = () => useContext(WorkoutContext);
+export const useWorkoutContext = () => {
+  const ctx = useContext(WorkoutContext);
+  if (!ctx) throw new Error('useWorkoutContext poza WorkoutProvider');
+  return ctx;
+};
