@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useWorkoutContext } from '../context/WorkoutContext';
+import { useTheme } from '../context/ThemeContext';
 
 // ─── Baza ćwiczeń ──────────────────────────────────────────────────────────────
 // Emotikony partii zamiast kolorowych kropek (Krok 4)
@@ -83,6 +84,8 @@ export const EXERCISE_MAP = Object.fromEntries(
 
 // ─── Modal: szczegóły ćwiczenia z placeholderem wideo ─────────────────────────
 const ExerciseDetailModal = ({ exercise, onClose, onSelect, selectMode }) => {
+  const { colors } = useTheme();
+  const detailStyles = makeDetailStyles(colors);
   if (!exercise) return null;
   const diffColor = { 'Łatwy': '#00E676', 'Średni': '#EF9F27', 'Zaawansowany': '#FF453A' }[exercise.difficulty] ?? '#8E8E93';
 
@@ -91,7 +94,7 @@ const ExerciseDetailModal = ({ exercise, onClose, onSelect, selectMode }) => {
       <View style={detailStyles.screen}>
         <View style={detailStyles.handle} />
         <TouchableOpacity style={detailStyles.closeBtn} onPress={onClose} activeOpacity={0.7}>
-          <Ionicons name="close" size={20} color="#8E8E93" />
+          <Ionicons name="close" size={20} color={colors.textSecondary} />
         </TouchableOpacity>
 
         <ScrollView contentContainerStyle={detailStyles.content} showsVerticalScrollIndicator={false}>
@@ -121,7 +124,7 @@ const ExerciseDetailModal = ({ exercise, onClose, onSelect, selectMode }) => {
           <Text style={detailStyles.sl}>Mięśnie główne</Text>
           {exercise.muscles.map((m, i) => (
             <View key={i} style={detailStyles.muscleRow}>
-              <View style={[detailStyles.dot, { backgroundColor: '#00E676' }]} />
+              <View style={[detailStyles.dot, { backgroundColor: colors.accent }]} />
               <Text style={detailStyles.muscleText}>{m}</Text>
             </View>
           ))}
@@ -129,8 +132,8 @@ const ExerciseDetailModal = ({ exercise, onClose, onSelect, selectMode }) => {
           <Text style={[detailStyles.sl, { marginTop: 16 }]}>Mięśnie synergistyczne</Text>
           {exercise.synergists.map((m, i) => (
             <View key={i} style={detailStyles.muscleRow}>
-              <View style={[detailStyles.dot, { backgroundColor: '#636366' }]} />
-              <Text style={[detailStyles.muscleText, { color: '#8E8E93' }]}>{m}</Text>
+              <View style={[detailStyles.dot, { backgroundColor: colors.textTertiary }]} />
+              <Text style={[detailStyles.muscleText, { color: colors.textSecondary }]}>{m}</Text>
             </View>
           ))}
 
@@ -155,37 +158,40 @@ const ExerciseDetailModal = ({ exercise, onClose, onSelect, selectMode }) => {
   );
 };
 
-const detailStyles = StyleSheet.create({
-  screen:     { flex: 1, backgroundColor: '#0A0A0A' },
-  handle:     { width: 36, height: 4, backgroundColor: '#3A3A3C', borderRadius: 2, alignSelf: 'center', marginTop: 12 },
-  closeBtn:   { position: 'absolute', top: 16, right: 16, width: 34, height: 34, borderRadius: 10, backgroundColor: '#1C1C1E', justifyContent: 'center', alignItems: 'center', zIndex: 10 },
+const makeDetailStyles = (c) => StyleSheet.create({
+  screen:     { flex: 1, backgroundColor: c.backgroundSecondary },
+  handle:     { width: 36, height: 4, backgroundColor: c.borderMuted, borderRadius: 2, alignSelf: 'center', marginTop: 12 },
+  closeBtn:   { position: 'absolute', top: 16, right: 16, width: 34, height: 34, borderRadius: 10, backgroundColor: c.card, justifyContent: 'center', alignItems: 'center', zIndex: 10 },
   content:    { padding: 24, paddingTop: 20, paddingBottom: 48 },
-  name:       { fontSize: 24, fontWeight: '800', color: '#FFFFFF', marginBottom: 12, paddingRight: 36 },
+  name:       { fontSize: 24, fontWeight: '800', color: c.textPrimary, marginBottom: 12, paddingRight: 36 },
   badgeRow:   { flexDirection: 'row', gap: 8, marginBottom: 20 },
-  badge:      { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#1C1C1E', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 },
-  badgeText:  { fontSize: 12, fontWeight: '600', color: '#8E8E93' },
+  badge:      { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: c.card, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 },
+  badgeText:  { fontSize: 12, fontWeight: '600', color: c.textSecondary },
 
-  videoBox:   { height: 200, backgroundColor: '#111111', borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginBottom: 28, gap: 10, borderWidth: 0.5, borderColor: '#2C2C2E' },
-  playCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(0,230,118,0.2)', justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: '#00E676' },
-  videoTitle: { fontSize: 15, fontWeight: '600', color: '#FFFFFF' },
-  videoSub:   { fontSize: 12, color: '#636366' },
+  videoBox:   { height: 200, backgroundColor: c.card, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginBottom: 28, gap: 10, borderWidth: 0.5, borderColor: c.border },
+  playCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: c.accentSoft, justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: c.accent },
+  videoTitle: { fontSize: 15, fontWeight: '600', color: c.textPrimary },
+  videoSub:   { fontSize: 12, color: c.textTertiary },
 
-  sl:          { fontSize: 11, fontWeight: '700', color: '#636366', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 12 },
-  description: { fontSize: 15, color: '#DEDEDE', lineHeight: 24, marginBottom: 24 },
+  sl:          { fontSize: 11, fontWeight: '700', color: c.textTertiary, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 12 },
+  description: { fontSize: 15, color: c.textPrimary, lineHeight: 24, marginBottom: 24 },
   muscleRow:   { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
   dot:         { width: 7, height: 7, borderRadius: 4 },
-  muscleText:  { fontSize: 15, color: '#FFFFFF' },
+  muscleText:  { fontSize: 15, color: c.textPrimary },
 
   tipBox:  { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: 'rgba(239,159,39,0.08)', borderRadius: 10, padding: 12, borderWidth: 0.5, borderColor: 'rgba(239,159,39,0.25)' },
-  tipText: { flex: 1, fontSize: 13, color: '#DEDEDE', lineHeight: 19 },
+  tipText: { flex: 1, fontSize: 13, color: c.textPrimary, lineHeight: 19 },
 
-  footer:        { padding: 16, paddingBottom: 32, borderTopWidth: 0.5, borderColor: '#2C2C2E' },
-  selectBtn:     { backgroundColor: '#00E676', borderRadius: 16, padding: 17, alignItems: 'center' },
-  selectBtnText: { fontSize: 16, fontWeight: '700', color: '#000000' },
+  footer:        { padding: 16, paddingBottom: 32, borderTopWidth: 0.5, borderColor: c.border },
+  selectBtn:     { backgroundColor: c.accent, borderRadius: 16, padding: 17, alignItems: 'center' },
+  selectBtnText: { fontSize: 16, fontWeight: '700', color: c.accentText },
 });
 
 // ─── Modal: filtr partii mięśniowej ───────────────────────────────────────────
-const MuscleFilterModal = ({ visible, selected, onSelect, onClose }) => (
+const MuscleFilterModal = ({ visible, selected, onSelect, onClose }) => {
+  const { colors } = useTheme();
+  const filterStyles = makeFilterStyles(colors);
+  return (
   <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
     <TouchableOpacity style={filterStyles.backdrop} onPress={onClose} activeOpacity={1}>
       <View style={filterStyles.sheet}>
@@ -213,21 +219,24 @@ const MuscleFilterModal = ({ visible, selected, onSelect, onClose }) => (
       </View>
     </TouchableOpacity>
   </Modal>
-);
+  );
+};
 
-const filterStyles = StyleSheet.create({
+const makeFilterStyles = (c) => StyleSheet.create({
   backdrop:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.78)', justifyContent: 'flex-end' },
-  sheet:       { backgroundColor: '#111111', borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20, paddingBottom: 48 },
-  handle:      { width: 36, height: 4, backgroundColor: '#3A3A3C', borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
-  title:       { fontSize: 16, fontWeight: '700', color: '#FFFFFF', marginBottom: 14 },
+  sheet:       { backgroundColor: c.backgroundSecondary, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20, paddingBottom: 48 },
+  handle:      { width: 36, height: 4, backgroundColor: c.borderMuted, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+  title:       { fontSize: 16, fontWeight: '700', color: c.textPrimary, marginBottom: 14 },
   row:         { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 12, borderRadius: 12, paddingHorizontal: 8 },
-  rowText:     { fontSize: 16, color: '#8E8E93', fontWeight: '500' },
-  emptyCircle: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: '#3A3A3C' },
+  rowText:     { fontSize: 16, color: c.textSecondary, fontWeight: '500' },
+  emptyCircle: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: c.borderMuted },
 });
 
 // ─── Modal: kreator nazwy planu ────────────────────────────────────────────────
 const PlanNameModal = ({ visible, count, onSave, onClose }) => {
   const [name, setName] = useState('');
+  const { colors } = useTheme();
+  const planStyles = makePlanStyles(colors);
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={planStyles.screen}>
@@ -239,7 +248,7 @@ const PlanNameModal = ({ visible, count, onSave, onClose }) => {
           value={name}
           onChangeText={setName}
           placeholder='np. "Push A", "Full Body Pro"'
-          placeholderTextColor="#3A3A3C"
+          placeholderTextColor={colors.borderMuted}
           autoFocus
           maxLength={40}
         />
@@ -259,22 +268,23 @@ const PlanNameModal = ({ visible, count, onSave, onClose }) => {
   );
 };
 
-const planStyles = StyleSheet.create({
-  screen:         { flex: 1, backgroundColor: '#111111' },
-  handle:         { width: 36, height: 4, backgroundColor: '#3A3A3C', borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 24 },
-  title:          { fontSize: 24, fontWeight: '700', color: '#FFFFFF', paddingHorizontal: 24, marginBottom: 6 },
-  sub:            { fontSize: 14, color: '#8E8E93', paddingHorizontal: 24, marginBottom: 24 },
-  input:          { backgroundColor: '#1C1C1E', borderRadius: 14, borderWidth: 1, borderColor: '#2C2C2E', color: '#FFFFFF', fontSize: 18, padding: 16, marginHorizontal: 20, marginBottom: 20 },
-  saveBtn:        { backgroundColor: '#00E676', borderRadius: 16, margin: 20, marginTop: 4, padding: 17, alignItems: 'center' },
+const makePlanStyles = (c) => StyleSheet.create({
+  screen:         { flex: 1, backgroundColor: c.backgroundSecondary },
+  handle:         { width: 36, height: 4, backgroundColor: c.borderMuted, borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 24 },
+  title:          { fontSize: 24, fontWeight: '700', color: c.textPrimary, paddingHorizontal: 24, marginBottom: 6 },
+  sub:            { fontSize: 14, color: c.textSecondary, paddingHorizontal: 24, marginBottom: 24 },
+  input:          { backgroundColor: c.card, borderRadius: 14, borderWidth: 1, borderColor: c.border, color: c.textPrimary, fontSize: 18, padding: 16, marginHorizontal: 20, marginBottom: 20 },
+  saveBtn:        { backgroundColor: c.accent, borderRadius: 16, margin: 20, marginTop: 4, padding: 17, alignItems: 'center' },
   saveBtnDisabled:{ opacity: 0.4 },
-  saveBtnText:    { fontSize: 16, fontWeight: '700', color: '#000000' },
+  saveBtnText:    { fontSize: 16, fontWeight: '700', color: c.accentText },
   cancelBtn:      { marginHorizontal: 20, padding: 12, alignItems: 'center' },
-  cancelText:     { fontSize: 15, color: '#636366' },
+  cancelText:     { fontSize: 15, color: c.textTertiary },
 });
 
 // ─── Główny komponent ekranu biblioteki ───────────────────────────────────────
 export default function ExercisesLibraryScreen({ navigation, route }) {
   const { addCustomPlan }   = useWorkoutContext();
+  const { colors } = useTheme();
 
   // selectMode: tryb wyboru ćwiczenia jako zamiennika (wywołany z ActiveWorkoutScreen)
   const selectMode    = route?.params?.selectMode ?? false;
@@ -325,6 +335,7 @@ export default function ExercisesLibraryScreen({ navigation, route }) {
     navigation.goBack();
   };
 
+  const styles = makeStyles(colors);
   const currentSection = EXERCISE_DATABASE.find((s) => s.filterKey === muscle);
   const chipAccent     = currentSection?.accent ?? '#8E8E93';
 
@@ -365,7 +376,7 @@ export default function ExercisesLibraryScreen({ navigation, route }) {
     <View style={styles.screen}>
       <View style={styles.topBar}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
+          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.topBarTitle}>
           {selectMode ? 'Wybierz ćwiczenie' : creatorMode ? 'Kreator planu' : 'Baza ćwiczeń'}
@@ -393,13 +404,13 @@ export default function ExercisesLibraryScreen({ navigation, route }) {
 
       {creatorMode && (
         <View style={styles.creatorBanner}>
-          <Ionicons name="checkmark-circle-outline" size={16} color="#A78BFA" />
+          <Ionicons name="checkmark-circle-outline" size={16} color={colors.library} />
           <Text style={styles.creatorBannerText}>Zaznacz ćwiczenia, które wejdą do planu</Text>
         </View>
       )}
 
       <View style={styles.searchWrapper}>
-        <Ionicons name="search" size={18} color="#636366" style={{ marginRight: 8 }} />
+        <Ionicons name="search" size={18} color={colors.textTertiary} style={{ marginRight: 8 }} />
         <TextInput
           style={styles.searchInput}
           placeholder="Szukaj ćwiczenia..."
@@ -411,7 +422,7 @@ export default function ExercisesLibraryScreen({ navigation, route }) {
         />
         {query.length > 0 && (
           <TouchableOpacity onPress={() => setQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="close-circle" size={18} color="#636366" />
+            <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
           </TouchableOpacity>
         )}
       </View>
@@ -429,7 +440,7 @@ export default function ExercisesLibraryScreen({ navigation, route }) {
 
       {filteredSections.length === 0 ? (
         <View style={styles.emptyState}>
-          <Ionicons name="search-outline" size={40} color="#3A3A3C" />
+          <Ionicons name="search-outline" size={40} color={colors.borderMuted} />
           <Text style={styles.emptyText}>Brak wyników dla "{query}"</Text>
         </View>
       ) : (
@@ -465,46 +476,46 @@ export default function ExercisesLibraryScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen:  { flex: 1, backgroundColor: '#000000' },
+const makeStyles = (c) => StyleSheet.create({
+  screen:  { flex: 1, backgroundColor: c.background },
   topBar:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 56, paddingHorizontal: 16, paddingBottom: 12 },
-  backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#121212', justifyContent: 'center', alignItems: 'center' },
-  topBarTitle:       { fontSize: 17, fontWeight: '700', color: '#FFFFFF' },
+  backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: c.backgroundSecondary, justifyContent: 'center', alignItems: 'center' },
+  topBarTitle:       { fontSize: 17, fontWeight: '700', color: c.textPrimary },
   cancelCreatorBtn:  { paddingHorizontal: 8, paddingVertical: 6 },
-  cancelCreatorText: { fontSize: 14, color: '#FF453A', fontWeight: '500' },
+  cancelCreatorText: { fontSize: 14, color: c.danger, fontWeight: '500' },
 
-  createPlanBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#00E676', marginHorizontal: 16, marginBottom: 12, borderRadius: 18, padding: 16, gap: 14 },
+  createPlanBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: c.accent, marginHorizontal: 16, marginBottom: 12, borderRadius: 18, padding: 16, gap: 14 },
   createPlanIcon:{ width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.2)', justifyContent: 'center', alignItems: 'center' },
   createPlanText:{ flex: 1 },
-  createPlanTitle:{ fontSize: 15, fontWeight: '700', color: '#000' },
-  createPlanSub:  { fontSize: 12, color: 'rgba(0,0,0,0.55)', marginTop: 2 },
+  createPlanTitle:{ fontSize: 15, fontWeight: '700', color: c.accentText },
+  createPlanSub:  { fontSize: 12, color: c.accentText, opacity: 0.55, marginTop: 2 },
 
-  creatorBanner:     { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(167,139,250,0.1)', marginHorizontal: 16, marginBottom: 10, borderRadius: 12, padding: 12, borderWidth: 0.5, borderColor: 'rgba(167,139,250,0.3)' },
-  creatorBannerText: { fontSize: 13, color: '#C4B5FD', flex: 1 },
+  creatorBanner:     { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: c.librarySoft, marginHorizontal: 16, marginBottom: 10, borderRadius: 12, padding: 12, borderWidth: 0.5, borderColor: c.librarySoft },
+  creatorBannerText: { fontSize: 13, color: c.library, flex: 1 },
 
-  searchWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#121212', marginHorizontal: 16, marginBottom: 10, borderRadius: 14, paddingHorizontal: 14, borderWidth: 0.5, borderColor: '#2C2C2E', height: 46 },
-  searchInput:   { flex: 1, fontSize: 15, color: '#FFFFFF', paddingVertical: 0 },
+  searchWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: c.backgroundSecondary, marginHorizontal: 16, marginBottom: 10, borderRadius: 14, paddingHorizontal: 14, borderWidth: 0.5, borderColor: c.border, height: 46 },
+  searchInput:   { flex: 1, fontSize: 15, color: c.textPrimary, paddingVertical: 0 },
 
-  filterChip:     { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginHorizontal: 16, marginBottom: 8, backgroundColor: '#121212', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 9, borderWidth: 1, borderColor: '#2C2C2E' },
-  filterChipText: { fontSize: 14, color: '#8E8E93', fontWeight: '500' },
+  filterChip:     { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginHorizontal: 16, marginBottom: 8, backgroundColor: c.backgroundSecondary, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 9, borderWidth: 1, borderColor: c.border },
+  filterChipText: { fontSize: 14, color: c.textSecondary, fontWeight: '500' },
 
   listContent:   { paddingBottom: 100 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#000000', paddingHorizontal: 20, paddingVertical: 10, borderBottomWidth: 0.5, borderColor: '#1C1C1E', borderLeftWidth: 3 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: c.background, paddingHorizontal: 20, paddingVertical: 10, borderBottomWidth: 0.5, borderColor: c.border, borderLeftWidth: 3 },
   sectionTitle:  { fontSize: 13, fontWeight: '700', letterSpacing: 0.5 },
 
-  row:       { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#000000', gap: 12 },
-  thumbnail: { width: 50, height: 50, borderRadius: 10, backgroundColor: '#1C1C1E' },
+  row:       { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: c.background, gap: 12 },
+  thumbnail: { width: 50, height: 50, borderRadius: 10, backgroundColor: c.card },
   rowInfo:   { flex: 1, minWidth: 0 },
-  rowName:   { fontSize: 15, fontWeight: '500', color: '#FFFFFF', marginBottom: 3 },
-  rowMeta:   { fontSize: 12, color: '#636366' },
-  separator: { height: 0.5, backgroundColor: '#1C1C1E', marginLeft: 78 },
+  rowName:   { fontSize: 15, fontWeight: '500', color: c.textPrimary, marginBottom: 3 },
+  rowMeta:   { fontSize: 12, color: c.textTertiary },
+  separator: { height: 0.5, backgroundColor: c.border, marginLeft: 78 },
 
-  checkbox:         { width: 24, height: 24, borderRadius: 7, borderWidth: 1.5, borderColor: '#3A3A3C', justifyContent: 'center', alignItems: 'center' },
-  checkboxSelected: { backgroundColor: '#A78BFA', borderColor: '#A78BFA' },
+  checkbox:         { width: 24, height: 24, borderRadius: 7, borderWidth: 1.5, borderColor: c.borderMuted, justifyContent: 'center', alignItems: 'center' },
+  checkboxSelected: { backgroundColor: c.library, borderColor: c.library },
 
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, paddingBottom: 80 },
-  emptyText:  { fontSize: 15, color: '#3A3A3C' },
+  emptyText:  { fontSize: 15, color: c.borderMuted },
 
-  fab:     { position: 'absolute', bottom: 20, left: 20, right: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#A78BFA', borderRadius: 18, padding: 18, shadowColor: '#A78BFA', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.4, shadowRadius: 14, elevation: 10 },
-  fabText: { fontSize: 16, fontWeight: '700', color: '#000' },
+  fab:     { position: 'absolute', bottom: 20, left: 20, right: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: c.library, borderRadius: 18, padding: 18, shadowColor: c.library, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.4, shadowRadius: 14, elevation: 10 },
+  fabText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
 });

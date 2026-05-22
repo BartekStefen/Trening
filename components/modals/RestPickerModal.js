@@ -3,35 +3,24 @@ import {
   Modal, ScrollView, StyleSheet, Text,
   TouchableOpacity, View,
 } from 'react-native';
+import { useTheme } from '../../context/ThemeContext';
 
-// ─── Stałe ────────────────────────────────────────────────────────────────────
-// 55 presetów: 30 s – 300 s co 5 s
 const REST_PRESETS  = Array.from({ length: 55 }, (_, i) => 30 + i * 5);
 const PRESET_ITEM_H = 62;
 
 const fmt = (s) =>
   s < 60 ? `${s} s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} min`;
 
-// ─── RestPickerModal ──────────────────────────────────────────────────────────
-// Drum-roller: snapToInterval + decelerationRate="fast" daje efekt bębna
-// bez zewnętrznych bibliotek. Dwie zielone linie podświetlają aktywną pozycję.
-//
-// Props:
-//   isVisible        – boolean
-//   currentRest      – aktualnie ustawiony czas (sekundy)
-//   onSelectTime(sec)– callback wywoływany po zatwierdzeniu
-//   onClose()        – callback zamknięcia bez zapisu
 const RestPickerModal = ({ isVisible, currentRest, onSelectTime, onClose }) => {
-  const scrollRef      = useRef(null);
-  const [sel, setSel]  = useState(currentRest ?? 90);
+  const scrollRef     = useRef(null);
+  const [sel, setSel] = useState(currentRest ?? 90);
+  const { colors }    = useTheme();
 
-  // Przy każdym otwarciu przewijamy do aktualnie ustawionej wartości
   useEffect(() => {
     if (!isVisible) return;
     const safeRest = currentRest ?? 90;
     setSel(safeRest);
     const idx = REST_PRESETS.indexOf(safeRest);
-    // Timeout 80ms pozwala modalu się zamontować przed scrollTo
     setTimeout(() => {
       scrollRef.current?.scrollTo({
         y: Math.max(0, idx) * PRESET_ITEM_H,
@@ -52,17 +41,15 @@ const RestPickerModal = ({ isVisible, currentRest, onSelectTime, onClose }) => {
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View style={styles.screen}>
-        <View style={styles.handle} />
-        <Text style={styles.title}>Czas przerwy</Text>
-        <Text style={styles.sub}>30 s – 5:00 min · krok co 5 s</Text>
+      <View style={[s.screen, { backgroundColor: colors.backgroundSecondary }]}>
+        <View style={[s.handle, { backgroundColor: colors.borderMuted }]} />
+        <Text style={[s.title, { color: colors.textPrimary }]}>Czas przerwy</Text>
+        <Text style={[s.sub, { color: colors.textTertiary }]}>30 s – 5:00 min · krok co 5 s</Text>
 
-        {/* ── Drum-roller ── */}
-        <View style={styles.drum}>
-          {/* Górna linia selekcji */}
-          <View style={styles.lineTop}    pointerEvents="none" />
-          {/* Dolna linia selekcji */}
-          <View style={styles.lineBottom} pointerEvents="none" />
+        <View style={[s.drum, { backgroundColor: colors.card }]}>
+          {/* Linie podświetlające aktywną pozycję — kolor akcentu motywu */}
+          <View style={[s.lineTop,    { backgroundColor: colors.accent }]} pointerEvents="none" />
+          <View style={[s.lineBottom, { backgroundColor: colors.accent }]} pointerEvents="none" />
 
           <ScrollView
             ref={scrollRef}
@@ -84,7 +71,7 @@ const RestPickerModal = ({ isVisible, currentRest, onSelectTime, onClose }) => {
             {REST_PRESETS.map((sec) => (
               <TouchableOpacity
                 key={sec}
-                style={styles.item}
+                style={s.item}
                 onPress={() => {
                   setSel(sec);
                   scrollRef.current?.scrollTo({
@@ -94,7 +81,11 @@ const RestPickerModal = ({ isVisible, currentRest, onSelectTime, onClose }) => {
                 }}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.itemText, sec === sel && styles.itemActive]}>
+                <Text style={[
+                  s.itemText,
+                  { color: colors.borderMuted },
+                  sec === sel && { color: colors.textPrimary, fontSize: 22, fontWeight: '700' },
+                ]}>
                   {fmt(sec)}
                 </Text>
               </TouchableOpacity>
@@ -102,41 +93,42 @@ const RestPickerModal = ({ isVisible, currentRest, onSelectTime, onClose }) => {
           </ScrollView>
         </View>
 
-        <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirm} activeOpacity={0.85}>
-          <Text style={styles.confirmText}>Zatwierdź · {fmt(sel)}</Text>
+        <TouchableOpacity
+          style={[s.confirmBtn, { backgroundColor: colors.accent }]}
+          onPress={handleConfirm}
+          activeOpacity={0.85}
+        >
+          <Text style={[s.confirmText, { color: colors.accentText }]}>Zatwierdź · {fmt(sel)}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.7}>
-          <Text style={styles.cancelText}>Anuluj</Text>
+        <TouchableOpacity style={s.cancelBtn} onPress={onClose} activeOpacity={0.7}>
+          <Text style={[s.cancelText, { color: colors.textTertiary }]}>Anuluj</Text>
         </TouchableOpacity>
       </View>
     </Modal>
   );
 };
 
-const styles = StyleSheet.create({
-  screen:      { flex: 1, backgroundColor: '#111111' },
-  handle:      { width: 36, height: 4, backgroundColor: '#3A3A3C', borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 20 },
-  title:       { fontSize: 22, fontWeight: '700', color: '#FFFFFF', paddingHorizontal: 24, marginBottom: 6 },
-  sub:         { fontSize: 13, color: '#636366', paddingHorizontal: 24, marginBottom: 20 },
+const s = StyleSheet.create({
+  screen:      { flex: 1 },
+  handle:      { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 20 },
+  title:       { fontSize: 22, fontWeight: '700', paddingHorizontal: 24, marginBottom: 6 },
+  sub:         { fontSize: 13, paddingHorizontal: 24, marginBottom: 20 },
   drum: {
     height: PRESET_ITEM_H * 5,
     marginHorizontal: 20,
     borderRadius: 18,
     overflow: 'hidden',
-    backgroundColor: '#1C1C1E',
     position: 'relative',
   },
-  // Dwie poziome linie podświetlające środkową (aktywną) pozycję
-  lineTop:     { position: 'absolute', top: PRESET_ITEM_H * 2, left: 0, right: 0, height: 1, backgroundColor: '#00E676', zIndex: 10 },
-  lineBottom:  { position: 'absolute', top: PRESET_ITEM_H * 3 - 1, left: 0, right: 0, height: 1, backgroundColor: '#00E676', zIndex: 10 },
+  lineTop:     { position: 'absolute', top: PRESET_ITEM_H * 2, left: 0, right: 0, height: 1, zIndex: 10 },
+  lineBottom:  { position: 'absolute', top: PRESET_ITEM_H * 3 - 1, left: 0, right: 0, height: 1, zIndex: 10 },
   item:        { height: PRESET_ITEM_H, justifyContent: 'center', alignItems: 'center' },
-  itemText:    { fontSize: 19, color: '#3A3A3C', fontWeight: '500' },
-  itemActive:  { fontSize: 22, color: '#FFFFFF', fontWeight: '700' },
-  confirmBtn:  { backgroundColor: '#00E676', borderRadius: 16, margin: 20, marginTop: 24, padding: 17, alignItems: 'center' },
-  confirmText: { fontSize: 16, fontWeight: '700', color: '#000000' },
+  itemText:    { fontSize: 19, fontWeight: '500' },
+  confirmBtn:  { borderRadius: 16, margin: 20, marginTop: 24, padding: 17, alignItems: 'center' },
+  confirmText: { fontSize: 16, fontWeight: '700' },
   cancelBtn:   { marginHorizontal: 20, padding: 12, alignItems: 'center' },
-  cancelText:  { fontSize: 15, color: '#636366' },
+  cancelText:  { fontSize: 15 },
 });
 
 export default RestPickerModal;

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Alert, StyleSheet, Text, TextInput,
+  Alert, Animated, StyleSheet, Text, TextInput,
   TouchableOpacity, View,
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
-import DropSetButton from './DropSetButton';
+import * as Haptics from 'expo-haptics';
+import { useTheme } from '../../context/ThemeContext';
 
 const GYM_KEYWORDS = [
   'kg','kilo','powt','rep','rpe','rir','zapas','seri','max','maksa','pr','rekord',
@@ -23,37 +24,30 @@ const normalize = (str) =>
 const analyzeWorkoutNote = async ({ note, uiKg, uiReps }) => {
   const raw        = (note ?? '').trim();
   const normalized = normalize(raw);
-
   if (!raw && !uiKg) return { type: 'empty', message: 'Opisz serię lub uzupełnij pola kg / RPE.' };
-
   const hasGymKw = GYM_KEYWORDS.some((kw) => normalized.includes(kw));
-  if (raw && !hasGymKw) return { type: 'blocked', message: '❌ Odrzucono: Komunikat niezwiązany z treningiem.' };
-
+  if (raw && !hasGymKw) return { type: 'blocked', message: '❌ Odrzucono: temat niezwiązany z treningiem.' };
   const kgMatch       = normalized.match(/(\d+(?:[.,]\d+)?)\s*(?:kg|kilo(?:gram)?)/);
   const extractedKg   = kgMatch ? parseFloat(kgMatch[1].replace(',', '.')) : null;
   const repsMatch     = normalized.match(/(?:na|x)\s*(\d+)|(\d+)\s*powt/);
   const extractedReps = repsMatch ? parseInt(repsMatch[1] ?? repsMatch[2]) : null;
-
-  const currentKg   = extractedKg   ?? parseFloat(uiKg)  ?? null;
-  const currentReps = extractedReps ?? parseInt(uiReps)   ?? null;
+  const currentKg     = extractedKg   ?? parseFloat(uiKg)  ?? null;
+  const currentReps   = extractedReps ?? parseInt(uiReps)   ?? null;
   if (!currentKg) return { type: 'error', message: '❌ Nie znaleziono ciężaru.' };
-
   const rirMatch = normalized.match(/(?:zapas(?:u|em)?|zostalo)\s*(?:na\s*)?(\d+)/i);
   const rpeMatch = normalized.match(/rpe\s*(\d+(?:[.,]\d+)?)/i);
   let rir = null;
   if (rirMatch)                                    rir = parseInt(rirMatch[1]);
   else if (rpeMatch)                               rir = Math.max(0, 10 - parseFloat(rpeMatch[1].replace(',', '.')));
   else if (/\b(?:max|upadek)\b/.test(normalized))  rir = 0;
-
   if (rir !== null) {
     let deltaKg, findings, decision;
-    if (rir >= 3)      { deltaKg = 5;   findings = `Duży zapas (RIR ${rir})`;        decision = `+5 kg`; }
-    else if (rir >= 1) { deltaKg = 2.5; findings = `Umiarkowany zapas (RIR ${rir})`; decision = `+2.5 kg`; }
+    if (rir >= 3)      { deltaKg = 5;   findings = `Duży zapas (RIR ${rir})`;        decision = '+5 kg'; }
+    else if (rir >= 1) { deltaKg = 2.5; findings = `Umiarkowany zapas (RIR ${rir})`; decision = '+2.5 kg'; }
     else               { deltaKg = 0;   findings = 'RIR 0 – limit';                  decision = 'Utrzymaj'; }
     const newKg = Math.round(Math.max(0, currentKg + deltaKg) * 2) / 2;
     return { type: 'math', status: 'Analiza lokalna (RIR)', findings, decision, suggestedKg: newKg, suggestedReps: currentReps };
   }
-
   const EASY = ['lekko','git','izzi','okej','ok','izi','luz','luzno','gladko','poszlo'];
   const HARD = ['ciezko','smierc','masakra','opor','zajechany'];
   if (EASY.some((kw) => normalized.includes(kw))) {
@@ -63,7 +57,6 @@ const analyzeWorkoutNote = async ({ note, uiKg, uiReps }) => {
   if (HARD.some((kw) => normalized.includes(kw))) {
     return { type: 'keyword', status: 'Analiza lokalna', findings: 'Przeciążenie', decision: 'Utrzymaj', suggestedKg: currentKg, suggestedReps: currentReps };
   }
-
   try {
     await new Promise((res) => setTimeout(res, 1500));
     return { type: 'cloud', status: 'Cloud AI', findings: 'Złożony wzorzec', decision: 'Deload -5 kg', suggestedKg: currentKg, suggestedReps: currentReps };
@@ -80,11 +73,57 @@ const ProgressArrow = ({ value, suggestedKg }) => {
   return <Ionicons name="remove" size={11} color="#636366" />;
 };
 
+// ─── RPE Picker inline ────────────────────────────────────────────────────────
+const RPE_VALUES = ['6', '6.5', '7', '7.5', '8', '8.5', '9', '9.5', '10'];
+
+const RpeInlinePicker = ({ currentRpe, onSelect, onClose, colors }) => {
+  const styles = makeStyles(colors);
+  return (
+    <View style={styles.rpePicker}>
+      <View style={styles.rpePickerHeader}>
+        <Ionicons name="flame-outline" size={13} color={colors.warning} />
+        <Text style={styles.rpePickerTitle}>RPE — wybierz intensywność</Text>
+        <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Ionicons name="close" size={16} color={colors.textTertiary} />
+        </TouchableOpacity>
+      </View>
+      <View style={styles.rpePickerRow}>
+        {RPE_VALUES.map((val) => (
+          <TouchableOpacity
+            key={val}
+            style={[
+              styles.rpeBtn,
+              currentRpe === val && styles.rpeBtnActive,
+              parseFloat(val) >= 9.5 && styles.rpeBtnDanger,
+            ]}
+            onPress={() => { onSelect(val); onClose(); }}
+            activeOpacity={0.7}
+          >
+            <Text style={[
+              styles.rpeBtnText,
+              currentRpe === val && styles.rpeBtnTextActive,
+              parseFloat(val) >= 9.5 && styles.rpeBtnTextDanger,
+            ]}>
+              {val}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <View style={styles.rpeScale}>
+        <Text style={styles.rpeScaleTip}>6 = bardzo lekko</Text>
+        <Text style={styles.rpeScaleTip}>10 = do upadku</Text>
+      </View>
+    </View>
+  );
+};
+
 const SmartInsightCard = ({ progression, uiKg, uiReps, onCascadeUpdate }) => {
   const [note, setNote]       = useState('');
   const [result, setResult]   = useState(null);
   const [loading, setLoading] = useState(false);
   const debounceRef           = useRef(null);
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
 
   useEffect(() => {
     clearTimeout(debounceRef.current);
@@ -96,48 +135,46 @@ const SmartInsightCard = ({ progression, uiKg, uiReps, onCascadeUpdate }) => {
       const r = await analyzeWorkoutNote({ note, uiKg, uiReps });
       setLoading(false);
       setResult(r);
-      if (r.suggestedKg != null && r.type !== 'blocked') {
-        onCascadeUpdate?.(r.suggestedKg, r.suggestedReps);
-      }
+      if (r.suggestedKg != null && r.type !== 'blocked') onCascadeUpdate?.(r.suggestedKg, r.suggestedReps);
     };
     if (isInstant) run(); else debounceRef.current = setTimeout(run, 400);
     return () => clearTimeout(debounceRef.current);
   }, [note, uiKg, uiReps]);
 
   return (
-    <View style={insightStyles.card}>
+    <View style={styles.aiCard}>
       <TextInput
-        style={insightStyles.noteInput}
+        style={styles.aiInput}
         value={note}
         onChangeText={setNote}
-        placeholder='np. "80kg na 8, zapas 2" lub "lekko"'
-        placeholderTextColor="#3A3A3C"
+        placeholder='np. "zapas 2" lub "lekko"'
+        placeholderTextColor={colors.borderMuted}
         multiline
         numberOfLines={2}
         keyboardType="default"
       />
-      {loading && <Text style={insightStyles.loadingText}>🤖 Analizuję...</Text>}
+      {loading && <Text style={styles.aiLoading}>🤖 Analizuję...</Text>}
       {!loading && !result && (
-        <Text style={insightStyles.defaultHint}>
-          APRE: <Text style={{ color: '#A78BFA', fontWeight: '700' }}>{progression?.label ?? '—'}</Text>
+        <Text style={styles.aiHint}>
+          APRE: <Text style={{ color: colors.library, fontWeight: '700' }}>{progression?.label ?? '—'}</Text>
         </Text>
       )}
       {!loading && result && ['error','spam','offline','empty','blocked'].includes(result.type) && (
-        <Text style={insightStyles.errorText}>{result.message}</Text>
+        <Text style={styles.aiError}>{result.message}</Text>
       )}
       {!loading && result?.status && (
-        <View style={insightStyles.resultBlock}>
-          <Text style={insightStyles.resultLine}>
-            <Text style={insightStyles.resultLabel}>Wnioski: </Text>
-            <Text style={insightStyles.resultValue}>{result.findings}</Text>
+        <View style={{ gap: 2 }}>
+          <Text style={styles.aiLine}>
+            <Text style={styles.aiLabel}>Wnioski: </Text>
+            <Text style={styles.aiValue}>{result.findings}</Text>
           </Text>
-          <Text style={insightStyles.resultLine}>
-            <Text style={insightStyles.resultLabel}>Decyzja: </Text>
-            <Text style={[insightStyles.resultValue, { color: '#A78BFA', fontWeight: '600' }]}>{result.decision}</Text>
+          <Text style={styles.aiLine}>
+            <Text style={styles.aiLabel}>Decyzja: </Text>
+            <Text style={[styles.aiValue, { color: colors.library, fontWeight: '600' }]}>{result.decision}</Text>
           </Text>
           {result.suggestedKg != null && (
-            <Text style={insightStyles.suggLine}>
-              → <Text style={{ color: '#00E676', fontWeight: '700' }}>{result.suggestedKg} kg x {result.suggestedReps ?? '—'}</Text>
+            <Text style={styles.aiSugg}>
+              → <Text style={{ color: colors.accent, fontWeight: '700' }}>{result.suggestedKg} kg × {result.suggestedReps ?? '—'}</Text>
             </Text>
           )}
         </View>
@@ -146,60 +183,132 @@ const SmartInsightCard = ({ progression, uiKg, uiReps, onCascadeUpdate }) => {
   );
 };
 
-const insightStyles = StyleSheet.create({
-  card:        { backgroundColor: '#1A1A1A', borderRadius: 12, borderWidth: 0.5, borderColor: '#00E676', padding: 10, marginTop: 6, marginBottom: 4 },
-  noteInput:   { backgroundColor: '#0A0A0A', borderRadius: 9, borderWidth: 1, borderColor: '#2C2C2E', color: '#FFFFFF', fontSize: 13, padding: 9, minHeight: 46, textAlignVertical: 'top', marginBottom: 6 },
-  loadingText: { fontSize: 11, color: '#378ADD', fontStyle: 'italic' },
-  defaultHint: { fontSize: 11, color: '#636366' },
-  errorText:   { fontSize: 11, color: '#FF453A' },
-  resultBlock: { gap: 3 },
-  resultLine:  { fontSize: 11, lineHeight: 16 },
-  resultLabel: { color: '#636366' },
-  resultValue: { color: '#EBEBEB' },
-  suggLine:    { fontSize: 12, marginTop: 2 },
-});
-
-// ─── SwipeableSetRow ──────────────────────────────────────────────────────────
-// Nowe propsy:
-//   onDropSetPress()         – tworzy drop-set pod bieżącą serię
-//   onWeightPress(kg)        – otwiera kalkulator krążków dla podanego ciężaru
+// ─── Główny komponent wiersza serii ──────────────────────────────────────────
 const SwipeableSetRow = ({
   setData,
   index,
+  totalSets,        // ile serii ma to ćwiczenie — by wykryć "ostatnia seria"
   progression,
   onUpdate,
   onToggleComplete,
-  onDeleteSet,
+  onDeleteSet,      // wywołane po potwierdzeniu, BEZ dodatkowego alertu w ExerciseCard
+  onDeleteExercise, // wywołane gdy to ostatnia seria
   onCascadeUpdate,
   onDropSetPress,
-  onWeightPress,
 }) => {
   const { prevLog, kg, reps, rpe, done, suggested, aiSuggested, isDropSet } = setData;
-  const [aiOpen, setAiOpen] = useState(false);
-  const swipeRef = useRef(null);
+  const [aiOpen, setAiOpen]           = useState(false);
+  const [rpePickerOpen, setRpePickerOpen] = useState(false);
+  const swipeRef                      = useRef(null);
+  const flashAnim                     = useRef(new Animated.Value(0)).current;
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
 
-  const renderRightActions = () => (
-    <TouchableOpacity
-      style={styles.swipeDeleteBtn}
-      onPress={() => { swipeRef.current?.close(); onDeleteSet(); }}
-      activeOpacity={0.8}
-    >
-      <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
-    </TouchableOpacity>
-  );
+  const flashRow = () => {
+    flashAnim.setValue(1);
+    Animated.timing(flashAnim, { toValue: 0, duration: 500, useNativeDriver: false }).start();
+  };
+
+  // Swipe LEWO = usuń / spalona
+  const handleSwipeDelete = () => {
+    swipeRef.current?.close();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+
+    if (totalSets <= 1) {
+      // Ostatnia seria — zapytaj o usunięcie całego ćwiczenia
+      Alert.alert(
+        'Ostatnia seria',
+        'To jedyna seria w tym ćwiczeniu.\nCzy usunąć całe ćwiczenie?',
+        [
+          { text: 'Anuluj', style: 'cancel' },
+          { text: 'Usuń ćwiczenie', style: 'destructive', onPress: onDeleteExercise },
+        ],
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Usunąć serię?',
+      'Seria zostanie usunięta z treningu.',
+      [
+        { text: 'Anuluj', style: 'cancel' },
+        // Wywołujemy onDeleteSet bezpośrednio — NIE przez confirmDeleteSet w ExerciseCard
+        { text: 'Usuń 🔥', style: 'destructive', onPress: onDeleteSet },
+      ],
+    );
+  };
+
+  // Swipe PRAWO = zaliczona
+  const handleSwipeDone = () => {
+    if (!done) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      flashRow();
+    }
+    swipeRef.current?.close();
+    onToggleComplete();
+  };
+
+  const renderRightActions = (progress) => {
+    const opacity = progress.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 0.7, 1] });
+    const scale   = progress.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] });
+    return (
+      <TouchableOpacity style={styles.swipeDeleteBtn} onPress={handleSwipeDelete} activeOpacity={0.85}>
+        <Animated.View style={{ alignItems: 'center', gap: 3, opacity, transform: [{ scale }] }}>
+          <Text style={{ fontSize: 18 }}>🔥</Text>
+          <Text style={styles.swipeLabel}>Spalona</Text>
+        </Animated.View>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderLeftActions = (progress) => {
+    const opacity = progress.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 0.7, 1] });
+    const scale   = progress.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] });
+    const bg      = done ? colors.borderMuted : colors.accent;
+    return (
+      <TouchableOpacity
+        style={[styles.swipeDoneBtn, { backgroundColor: bg }]}
+        onPress={handleSwipeDone}
+        activeOpacity={0.85}
+      >
+        <Animated.View style={{ alignItems: 'center', gap: 3, opacity, transform: [{ scale }] }}>
+          <Ionicons name={done ? 'close' : 'checkmark'} size={22} color={done ? colors.textSecondary : colors.accentText} />
+          <Text style={[styles.swipeLabel, { color: done ? colors.textSecondary : colors.accentText }]}>
+            {done ? 'Cofnij' : 'Zaliczona'}
+          </Text>
+        </Animated.View>
+      </TouchableOpacity>
+    );
+  };
+
+  const flashBg = flashAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['transparent', colors.accentSoft],
+  });
 
   return (
     <Swipeable
       ref={swipeRef}
       renderRightActions={renderRightActions}
-      rightThreshold={40}
+      renderLeftActions={renderLeftActions}
+      rightThreshold={60}
+      leftThreshold={60}
       overshootRight={false}
+      overshootLeft={false}
       friction={2}
+      onSwipeableOpen={(dir) => {
+        // Auto-trigger po pełnym swipe (bez potrzeby tapowania w akcję)
+        if (dir === 'right') handleSwipeDone();
+      }}
     >
-      <View style={[styles.wrapper, isDropSet && styles.wrapperDropSet]}>
+      <Animated.View style={[
+        styles.wrapper,
+        isDropSet && styles.wrapperDropSet,
+        { backgroundColor: flashBg },
+      ]}>
         {isDropSet && (
-          <View style={styles.dropSetBadge}>
-            <Text style={styles.dropSetBadgeText}>⚡ drop-set</Text>
+          <View style={styles.dropBadge}>
+            <Text style={styles.dropBadgeText}>⚡ drop-set</Text>
           </View>
         )}
 
@@ -212,41 +321,37 @@ const SwipeableSetRow = ({
             <Text style={styles.prevText} numberOfLines={1}>{prevLog}</Text>
           </View>
 
-          <TextInput
-            style={[styles.input, done && styles.inputDone]}
-            value={rpe}
-            onChangeText={(v) => onUpdate('rpe', v)}
-            keyboardType="numeric"
-            maxLength={3}
-            placeholder="RPE"
-            placeholderTextColor="#3A3A3C"
-            editable={!done}
-            selectTextOnFocus
-          />
-
-          {/* kg – długie przytrzymanie otwiera kalkulator krążków */}
+          {/* RPE — tap otwiera inline picker */}
           <TouchableOpacity
-            style={styles.inputWrap}
-            onLongPress={() => onWeightPress?.(kg)}
-            activeOpacity={1}
-            delayLongPress={400}
+            style={[styles.input, styles.rpeTouchable, done && styles.inputDone]}
+            onPress={() => !done && setRpePickerOpen((v) => !v)}
+            activeOpacity={0.75}
+            disabled={done}
           >
+            <Text style={[styles.kgText, !rpe && styles.kgPlaceholder, done && { color: colors.borderMuted }]}>
+              {rpe || 'RPE'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* ── Pole kg — zwykły TextInput ── */}
+          <View style={styles.inputWrap}>
             <TextInput
-              style={[styles.input, done && styles.inputDone]}
+              style={[styles.input, styles.inputKg, done && styles.inputDone]}
               value={kg}
               onChangeText={(v) => onUpdate('kg', v)}
-              keyboardType="decimal-pad"
-              maxLength={10}
+              keyboardType="numeric"
+              maxLength={6}
               placeholder="kg"
-              placeholderTextColor="#3A3A3C"
+              placeholderTextColor={colors.borderMuted}
               editable={!done}
               selectTextOnFocus
             />
             <View style={styles.arrow}>
               <ProgressArrow value={kg} suggestedKg={progression?.suggestedKg} />
             </View>
-          </TouchableOpacity>
+          </View>
 
+          {/* Powtórzenia */}
           <TextInput
             style={[styles.input, styles.inputReps, done && styles.inputDone]}
             value={reps}
@@ -254,54 +359,60 @@ const SwipeableSetRow = ({
             keyboardType="numeric"
             maxLength={10}
             placeholder="Powt."
-            placeholderTextColor="#3A3A3C"
+            placeholderTextColor={colors.borderMuted}
             editable={!done}
             selectTextOnFocus
           />
 
-          {/* DropSetButton przed checkboxem */}
-          <DropSetButton onPress={() => onDropSetPress?.()} />
-
+          {/* Checkbox */}
           <TouchableOpacity
             style={[styles.checkbox, done && styles.checkboxDone]}
             onPress={onToggleComplete}
             activeOpacity={0.7}
           >
-            {done && <Ionicons name="checkmark" size={18} color="#000" />}
+            {done && <Ionicons name="checkmark" size={18} color={colors.accentText} />}
           </TouchableOpacity>
         </View>
 
-        <View style={styles.suggRow}>
-          <Text style={styles.suggLabel}>Sugerowane: </Text>
-          <Text style={styles.suggVal}>{suggested ?? progression?.label ?? '—'}</Text>
+        {/* RPE Picker inline */}
+        {rpePickerOpen && (
+          <RpeInlinePicker
+            currentRpe={rpe}
+            onSelect={(val) => onUpdate('rpe', val)}
+            onClose={() => setRpePickerOpen(false)}
+            colors={colors}
+          />
+        )}
 
-          {aiSuggested && (
+        {!isDropSet && !rpePickerOpen && (
+          <View style={styles.suggRow}>
+            <Text style={styles.suggLabel}>Sugerowane: </Text>
+            <Text style={styles.suggVal}>{suggested ?? progression?.label ?? '—'}</Text>
+
+            {aiSuggested && (
+              <TouchableOpacity
+                onLongPress={() =>
+                  Alert.alert('AI Insight', 'AI przeliczyło ciężar na podstawie zapasu z poprzedniej serii.', [{ text: 'OK' }])
+                }
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.brainIcon}>🧠</Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity
-              onLongPress={() =>
-                Alert.alert(
-                  'AI Insight',
-                  'AI przeliczyło ciężar na podstawie zapasu z poprzedniej serii.',
-                  [{ text: 'OK' }],
-                )
-              }
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={styles.aiBtn}
+              onPress={() => setAiOpen((v) => !v)}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Text style={styles.aiBrainIcon}>🧠</Text>
+              <Text style={styles.aiEmoji}>🤖</Text>
+              <Text style={styles.aiBtnLabel}>{aiOpen ? 'Ukryj' : 'AI'}</Text>
             </TouchableOpacity>
-          )}
+          </View>
+        )}
 
-          <TouchableOpacity
-            style={styles.aiBtn}
-            onPress={() => setAiOpen((v) => !v)}
-            activeOpacity={0.7}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Text style={styles.aiEmoji}>🤖</Text>
-            <Text style={styles.aiLabel}>{aiOpen ? 'Ukryj' : 'AI'}</Text>
-          </TouchableOpacity>
-        </View>
-
-        {aiOpen && (
+        {!isDropSet && aiOpen && !rpePickerOpen && (
           <SmartInsightCard
             progression={progression}
             uiKg={kg}
@@ -309,45 +420,86 @@ const SwipeableSetRow = ({
             onCascadeUpdate={onCascadeUpdate}
           />
         )}
-      </View>
+      </Animated.View>
     </Swipeable>
   );
 };
 
-const styles = StyleSheet.create({
-  wrapper:        { backgroundColor: '#121212' },
-  wrapperDropSet: { backgroundColor: '#0E0A1A', borderLeftWidth: 2, borderLeftColor: 'rgba(167,139,250,0.5)' },
-  dropSetBadge:   { paddingLeft: 26, paddingBottom: 2 },
-  dropSetBadgeText:{ fontSize: 9, fontWeight: '700', color: '#A78BFA', letterSpacing: 0.5 },
+const makeStyles = (c) => StyleSheet.create({
+  wrapper:        { backgroundColor: c.backgroundSecondary },
+  wrapperDropSet: { backgroundColor: c.backgroundSecondary, borderLeftWidth: 2, borderLeftColor: c.librarySoft },
+  dropBadge:      { paddingLeft: 26, paddingBottom: 2 },
+  dropBadgeText:  { fontSize: 9, fontWeight: '700', color: c.library, letterSpacing: 0.5 },
 
   row:           { flexDirection: 'row', alignItems: 'center', gap: 4, paddingBottom: 4 },
   setNumWrapper: { width: 20, alignItems: 'center' },
-  setNum:        { fontSize: 13, fontWeight: '700', color: '#636366' },
+  setNum:        { fontSize: 13, fontWeight: '700', color: c.textTertiary },
   prevGroup:     { flex: 1, minWidth: 0 },
-  prevText:      { fontSize: 11, color: '#888888' },
+  prevText:      { fontSize: 11, color: c.textSecondary },
+
   input: {
     width: 46, minHeight: 48,
-    backgroundColor: '#0A0A0A', borderWidth: 1, borderColor: '#2C2C2E', borderRadius: 10,
-    fontSize: 15, fontWeight: '700', color: '#FFFFFF', textAlign: 'center', paddingVertical: 4,
+    backgroundColor: c.background, borderWidth: 1, borderColor: c.border, borderRadius: 10,
+    fontSize: 15, fontWeight: '700', color: c.textPrimary, textAlign: 'center', paddingVertical: 4,
   },
-  inputReps:    { width: 52 },
-  inputDone:    { color: '#3A3A3C', borderColor: '#1C1C1E' },
-  inputWrap:    { position: 'relative', width: 46 },
-  arrow:        { position: 'absolute', top: -7, right: -3, backgroundColor: '#000', borderRadius: 4 },
-  checkbox:     { width: 44, height: 44, minWidth: 44, borderRadius: 11, borderWidth: 1.5, borderColor: '#3A3A3C', justifyContent: 'center', alignItems: 'center' },
-  checkboxDone: { backgroundColor: '#00E676', borderColor: '#00E676' },
-  swipeDeleteBtn: {
-    backgroundColor: '#FF5252',
+  inputKg:       { width: 46 },
+  rpeTouchable:  { justifyContent: 'center', alignItems: 'center' },
+  kgText:        { fontSize: 15, fontWeight: '700', color: c.textPrimary },
+  kgPlaceholder: { color: c.borderMuted },
+  inputReps:     { width: 52 },
+  inputDone:     { color: c.borderMuted, borderColor: c.card },
+  inputWrap:     { position: 'relative', width: 46 },
+  arrow:         { position: 'absolute', top: -7, right: -3, backgroundColor: c.background, borderRadius: 4 },
+
+  checkbox: {
+    width: 44, height: 44, minWidth: 44,
+    borderRadius: 11, borderWidth: 1.5, borderColor: c.borderMuted,
     justifyContent: 'center', alignItems: 'center',
-    width: 68, borderRadius: 10, marginLeft: 8, marginBottom: 4,
   },
-  suggRow:     { flexDirection: 'row', alignItems: 'center', paddingLeft: 26, gap: 5, marginBottom: 8 },
-  suggLabel:   { fontSize: 11, color: '#636666' },
-  suggVal:     { fontSize: 11, color: '#A78BFA', fontWeight: '600', flex: 1 },
-  aiBrainIcon: { fontSize: 13 },
-  aiBtn:       { flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 3, paddingHorizontal: 6, backgroundColor: 'rgba(0,230,118,0.07)', borderRadius: 8, borderWidth: 0.5, borderColor: 'rgba(0,230,118,0.2)' },
-  aiEmoji:     { fontSize: 11 },
-  aiLabel:     { fontSize: 10, color: '#00E676', fontWeight: '600' },
+  checkboxDone:   { backgroundColor: c.accent, borderColor: c.accent },
+
+  swipeDeleteBtn: {
+    backgroundColor: c.danger,
+    justifyContent: 'center', alignItems: 'center',
+    width: 72, borderRadius: 10, marginLeft: 8, marginBottom: 4,
+  },
+  swipeDoneBtn: {
+    backgroundColor: c.accent,
+    justifyContent: 'center', alignItems: 'center',
+    width: 72, borderRadius: 10, marginRight: 8, marginBottom: 4,
+  },
+  swipeLabel: { fontSize: 10, fontWeight: '700', color: '#FFF', letterSpacing: 0.3 },
+
+  suggRow:    { flexDirection: 'row', alignItems: 'center', paddingLeft: 26, gap: 5, marginBottom: 8 },
+  suggLabel:  { fontSize: 11, color: c.textTertiary },
+  suggVal:    { fontSize: 11, color: c.library, fontWeight: '600', flex: 1 },
+  brainIcon:  { fontSize: 13 },
+  aiBtn:      { flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 3, paddingHorizontal: 6, backgroundColor: c.accentSoft, borderRadius: 8, borderWidth: 0.5, borderColor: c.accentSoft },
+  aiEmoji:    { fontSize: 11 },
+  aiBtnLabel: { fontSize: 10, color: c.accent, fontWeight: '600' },
+
+  aiCard:    { backgroundColor: c.card, borderRadius: 12, borderWidth: 0.5, borderColor: c.accent, padding: 10, marginTop: 6, marginBottom: 4 },
+  aiInput:   { backgroundColor: c.background, borderRadius: 9, borderWidth: 1, borderColor: c.border, color: c.textPrimary, fontSize: 13, padding: 9, minHeight: 46, textAlignVertical: 'top', marginBottom: 6 },
+  aiLoading: { fontSize: 11, color: c.water, fontStyle: 'italic' },
+  aiHint:    { fontSize: 11, color: c.textTertiary },
+  aiError:   { fontSize: 11, color: c.danger },
+  aiLine:    { fontSize: 11, lineHeight: 16 },
+  aiLabel:   { fontSize: 11, color: c.textTertiary },
+  aiValue:   { color: c.textPrimary },
+  aiSugg:    { fontSize: 12, marginTop: 2 },
+
+  rpePicker:       { backgroundColor: c.card, borderRadius: 12, borderWidth: 0.5, borderColor: c.warning, padding: 10, marginBottom: 8 },
+  rpePickerHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  rpePickerTitle:  { flex: 1, fontSize: 11, fontWeight: '600', color: c.warning },
+  rpePickerRow:    { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
+  rpeBtn:          { minWidth: 38, paddingHorizontal: 6, paddingVertical: 8, borderRadius: 9, backgroundColor: c.background, borderWidth: 1, borderColor: c.border, alignItems: 'center' },
+  rpeBtnActive:    { backgroundColor: c.warning, borderColor: c.warning },
+  rpeBtnDanger:    { borderColor: c.danger },
+  rpeBtnText:      { fontSize: 13, fontWeight: '600', color: c.textSecondary },
+  rpeBtnTextActive:{ color: '#000' },
+  rpeBtnTextDanger:{ color: c.danger },
+  rpeScale:        { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
+  rpeScaleTip:     { fontSize: 9, color: c.textTertiary },
 });
 
 export default SwipeableSetRow;

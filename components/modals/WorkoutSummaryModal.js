@@ -1,19 +1,19 @@
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useMemo } from 'react';
+import LiveMuscleMap from '../LiveMuscleMap';
+import { useTheme } from '../../context/ThemeContext';
+import useMuscleHeatmap from '../../hooks/useMuscleHeatmap';
 
-// ─── Helpers lokalne ──────────────────────────────────────────────────────────
 const KG_PER_CAR = 1500;
 
 const fmtDur = (s) => {
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sc = s % 60;
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sc = s % 60;
   if (h > 0) return `${h}h ${m}m`;
   if (m > 0) return `${m}m ${sc}s`;
   return `${sc}s`;
 };
 
-// Wykrywa nowe rekordy: kg > pierwsza liczba w prevLog (format "80 kg x 8 powt.")
 const detectPRs = (exercises) =>
   exercises.reduce((acc, ex) => {
     const prs = ex.sets.filter(
@@ -26,24 +26,18 @@ const detectPRs = (exercises) =>
     return acc;
   }, []);
 
-// ─── WorkoutSummaryModal ──────────────────────────────────────────────────────
-// Ekran podsumowania sesji treningowej. Czysty komponent – nie dotyka kontekstu.
-//
-// Props:
-//   isVisible   – boolean
-//   onClose()   – zamknięcie bez zapisywania
-//   summaryData – {
-//     totalSec     : number,   // czas treningu w sekundach
-//     totalTonnage : number,   // łączny tonaż (kg)
-//     exercises    : array,    // pełna lista ćwiczeń z seriami
-//   }
-//   onSave()    – callback zapisania do historii (obsługuje WorkoutContext w rodzicu)
 const WorkoutSummaryModal = ({ isVisible, onClose, summaryData, onSave }) => {
-  const { totalSec = 0, totalTonnage = 0, exercises = [] } = summaryData ?? {};
+  const { colors } = useTheme();
+  const s = makeStyles(colors);
+
+  const { totalSec = 0, totalTonnage = 0, exercises = [], workoutName = '', sessionNote = '' } = summaryData ?? {};
 
   const cars     = Math.floor(totalTonnage / KG_PER_CAR);
-  const prs      = detectPRs(exercises);
+  const prs      = useMemo(() => detectPRs(exercises), [exercises]);
   const doneSets = exercises.reduce((a, ex) => a + ex.sets.filter((s) => s.done).length, 0);
+  const heatmap  = useMuscleHeatmap(exercises);
+
+  const activeMuscleParts = Object.keys(heatmap).length;
 
   return (
     <Modal
@@ -52,80 +46,127 @@ const WorkoutSummaryModal = ({ isVisible, onClose, summaryData, onSave }) => {
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View style={styles.screen}>
-        <View style={styles.handle} />
+      <View style={s.screen}>
+        <View style={s.handle} />
 
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* ── Hero ── */}
-          <View style={styles.hero}>
-            <Text style={styles.heroLabel}>TRENING UKOŃCZONY</Text>
-            <Text style={styles.heroTitle}>Brawo! 💪</Text>
+        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+
+          {/* Hero */}
+          <View style={s.hero}>
+            <Text style={s.heroLabel}>TRENING UKOŃCZONY</Text>
+            <Text style={s.heroTitle}>Brawo! 💪</Text>
+            {workoutName ? <Text style={s.heroSub}>{workoutName}</Text> : null}
+            {sessionNote ? (
+              <View style={s.noteBox}>
+                <Ionicons name="create-outline" size={13} color={colors.textTertiary} />
+                <Text style={s.noteText}>{sessionNote}</Text>
+              </View>
+            ) : null}
           </View>
 
-          {/* ── Siatka statystyk ── */}
-          <View style={styles.grid}>
-            {/* Czas */}
-            <View style={styles.card}>
-              <Ionicons name="time-outline" size={22} color="#00E676" style={{ marginBottom: 8 }} />
-              <Text style={styles.cLabel}>Czas</Text>
-              <Text style={styles.cValue}>{fmtDur(totalSec)}</Text>
+          {/* Siatka statystyk */}
+          <View style={s.grid}>
+            <View style={s.card}>
+              <Ionicons name="time-outline" size={20} color={colors.accent} style={s.cardIcon} />
+              <Text style={s.cLabel}>Czas</Text>
+              <Text style={s.cValue}>{fmtDur(totalSec)}</Text>
+            </View>
+            <View style={s.card}>
+              <Ionicons name="layers-outline" size={20} color={colors.water} style={s.cardIcon} />
+              <Text style={s.cLabel}>Serie</Text>
+              <Text style={s.cValue}>{doneSets}</Text>
+            </View>
+            <View style={s.card}>
+              <Ionicons name="barbell-outline" size={20} color={colors.library} style={s.cardIcon} />
+              <Text style={s.cLabel}>Ćwiczenia</Text>
+              <Text style={s.cValue}>{exercises.length}</Text>
+            </View>
+            <View style={s.card}>
+              <Ionicons name="body-outline" size={20} color={colors.danger} style={s.cardIcon} />
+              <Text style={s.cLabel}>Partie</Text>
+              <Text style={s.cValue}>{activeMuscleParts}</Text>
             </View>
 
-            {/* Serie */}
-            <View style={styles.card}>
-              <Ionicons name="layers-outline" size={22} color="#378ADD" style={{ marginBottom: 8 }} />
-              <Text style={styles.cLabel}>Serie</Text>
-              <Text style={styles.cValue}>{doneSets}</Text>
-            </View>
-
-            {/* Tonaż – szeroka karta z metaforą samochodową */}
-            <View style={[styles.card, styles.cardWide]}>
-              <View style={styles.cardRow}>
+            {/* Tonaż — szeroka karta */}
+            <View style={[s.card, s.cardWide]}>
+              <View style={s.cardRow}>
                 <View>
-                  <Text style={styles.cLabel}>Tonaż całkowity</Text>
-                  <Text style={[styles.cValue, { fontSize: 28 }]}>
+                  <Text style={s.cLabel}>Tonaż całkowity</Text>
+                  <Text style={[s.cValue, { fontSize: 30 }]}>
                     {totalTonnage.toLocaleString('pl-PL')} kg
                   </Text>
                   {cars > 0 && (
-                    <Text style={styles.cSub}>
-                      Równowartość {cars} {cars === 1 ? 'samochodu' : 'samochodów'}!
+                    <Text style={s.cSub}>
+                      Równowartość {cars} {cars === 1 ? 'samochodu' : 'samochodów'} osobowych!
                     </Text>
                   )}
                 </View>
-                <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                <View style={{ alignItems: 'flex-end', gap: 3 }}>
                   {Array.from({ length: Math.min(cars, 3) }).map((_, i) => (
-                    <Ionicons key={i} name="car-sport-outline" size={24} color="#EF9F27" />
+                    <Ionicons key={i} name="car-sport-outline" size={26} color="#EF9F27" />
                   ))}
                 </View>
               </View>
             </View>
           </View>
 
-          {/* ── Placeholder heatmapy mięśni ── */}
-          <View style={styles.heatmap}>
-            <Ionicons name="body-outline" size={40} color="#3A3A3C" />
-            <Text style={styles.heatmapTitle}>Heatmapa mięśni</Text>
-            <Text style={styles.heatmapSub}>Tu pojawi się mapa przetrenowanych partii</Text>
+          {/* Mapa mięśni */}
+          <View style={s.muscleSection}>
+            <Text style={s.sectionTitle}>Zaangażowane mięśnie</Text>
+            <View style={s.muscleCard}>
+              {activeMuscleParts > 0 ? (
+                <LiveMuscleMap heatmap={heatmap} />
+              ) : (
+                <View style={s.musclePlaceholder}>
+                  <Ionicons name="body-outline" size={40} color={colors.borderMuted} />
+                  <Text style={s.musclePlaceholderText}>Brak zaliczonych serii</Text>
+                </View>
+              )}
+            </View>
           </View>
 
-          {/* ── Nowe rekordy ── */}
+          {/* Lista ćwiczeń */}
+          <Text style={s.sectionTitle}>Szczegóły treningu</Text>
+          {exercises.map((ex, i) => {
+            const doneSetsEx = ex.sets.filter((set) => set.done);
+            const tonnageEx  = doneSetsEx.reduce((a, set) =>
+              a + (parseFloat(set.kg) || 0) * (parseInt(set.reps) || 0), 0);
+            return (
+              <View key={ex.id ?? i} style={s.exCard}>
+                <View style={s.exHeader}>
+                  <Text style={s.exName} numberOfLines={1}>{ex.name}</Text>
+                  <Text style={s.exTonnage}>{tonnageEx > 0 ? `${tonnageEx} kg` : '—'}</Text>
+                </View>
+                <Text style={s.exMuscles}>{ex.muscleGroup}</Text>
+                <View style={s.exSets}>
+                  {doneSetsEx.map((set, si) => (
+                    <View key={set.id ?? si} style={s.setPill}>
+                      <Text style={s.setPillText}>{set.kg} kg × {set.reps}</Text>
+                    </View>
+                  ))}
+                  {doneSetsEx.length === 0 && (
+                    <Text style={s.exNoSets}>Brak zaliczonych serii</Text>
+                  )}
+                </View>
+              </View>
+            );
+          })}
+
+          {/* Rekordy */}
           {prs.length > 0 && (
             <>
-              <Text style={styles.stitle}>Nowe rekordy 🏆</Text>
+              <Text style={[s.sectionTitle, { marginTop: 8 }]}>Nowe rekordy 🏆</Text>
               {prs.map((pr, i) => (
-                <View key={i} style={styles.prCard}>
-                  <View style={styles.prTrophy}>
+                <View key={i} style={s.prCard}>
+                  <View style={s.prTrophy}>
                     <Ionicons name="trophy" size={17} color="#FAC775" />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.prName}>{pr.name}</Text>
-                    <Text style={styles.prVal}>{pr.kg} kg x {pr.reps} powt.</Text>
+                    <Text style={s.prName}>{pr.name}</Text>
+                    <Text style={s.prVal}>{pr.kg} kg × {pr.reps} powt.</Text>
                   </View>
-                  <View style={styles.prBadge}>
-                    <Text style={styles.prBadgeText}>Nowy PR!</Text>
+                  <View style={s.prBadge}>
+                    <Text style={s.prBadgeText}>Nowy PR!</Text>
                   </View>
                 </View>
               ))}
@@ -133,17 +174,20 @@ const WorkoutSummaryModal = ({ isVisible, onClose, summaryData, onSave }) => {
           )}
 
           {prs.length === 0 && (
-            <View style={styles.noPr}>
-              <Text style={styles.noPrText}>Brak nowych rekordów – konsekwencja to klucz. 💪</Text>
+            <View style={s.noPr}>
+              <Text style={s.noPrText}>Brak nowych rekordów — konsekwencja to klucz. 💪</Text>
             </View>
           )}
+
         </ScrollView>
 
-        {/* ── Przycisk zapisu ── */}
-        <View style={styles.footer}>
-          <TouchableOpacity style={styles.saveBtn} onPress={onSave} activeOpacity={0.85}>
-            <Text style={styles.saveBtnText}>Zapisz do historii</Text>
-            <Text style={styles.saveBtnSub}>Trening trafi do Twojego profilu</Text>
+        {/* Footer */}
+        <View style={s.footer}>
+          <TouchableOpacity style={s.discardBtn} onPress={onClose} activeOpacity={0.7}>
+            <Text style={s.discardText}>Anuluj</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.saveBtn} onPress={onSave} activeOpacity={0.85}>
+            <Text style={s.saveBtnText}>Zapisz trening</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -151,36 +195,59 @@ const WorkoutSummaryModal = ({ isVisible, onClose, summaryData, onSave }) => {
   );
 };
 
-const styles = StyleSheet.create({
-  screen:       { flex: 1, backgroundColor: '#0A0A0A' },
-  handle:       { width: 36, height: 4, backgroundColor: '#3A3A3C', borderRadius: 2, alignSelf: 'center', marginTop: 12 },
-  scroll:       { paddingBottom: 20 },
-  hero:         { paddingTop: 24, paddingHorizontal: 20, paddingBottom: 20, alignItems: 'center' },
-  heroLabel:    { fontSize: 12, fontWeight: '700', color: '#00E676', letterSpacing: 2, marginBottom: 6 },
-  heroTitle:    { fontSize: 36, fontWeight: '800', color: '#FFFFFF' },
-  grid:         { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 16, marginBottom: 14 },
-  card:         { flex: 1, minWidth: '45%', backgroundColor: '#1C1C1E', borderRadius: 18, padding: 16, borderWidth: 0.5, borderColor: '#2C2C2E' },
-  cardWide:     { flexBasis: '100%', flex: 0 },
-  cardRow:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cLabel:       { fontSize: 12, color: '#8E8E93', marginBottom: 4 },
-  cValue:       { fontSize: 24, fontWeight: '700', color: '#FFFFFF' },
-  cSub:         { fontSize: 12, color: '#636366', marginTop: 6, lineHeight: 17 },
-  heatmap:      { marginHorizontal: 16, marginBottom: 20, borderRadius: 18, height: 140, backgroundColor: '#1C1C1E', justifyContent: 'center', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#2C2C2E', borderStyle: 'dashed' },
-  heatmapTitle: { fontSize: 14, fontWeight: '500', color: '#3A3A3C' },
-  heatmapSub:   { fontSize: 12, color: '#3A3A3C', textAlign: 'center', paddingHorizontal: 24 },
-  stitle:       { fontSize: 18, fontWeight: '700', color: '#FFFFFF', paddingHorizontal: 20, marginBottom: 12 },
-  prCard:       { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1C1C1E', marginHorizontal: 16, marginBottom: 10, borderRadius: 16, padding: 14, gap: 12, borderWidth: 0.5, borderColor: '#2C2C2E' },
-  prTrophy:     { width: 38, height: 38, borderRadius: 11, backgroundColor: 'rgba(255,179,71,0.15)', justifyContent: 'center', alignItems: 'center' },
-  prName:       { fontSize: 14, fontWeight: '600', color: '#FFFFFF' },
-  prVal:        { fontSize: 12, color: '#8E8E93', marginTop: 3 },
-  prBadge:      { backgroundColor: 'rgba(255,179,71,0.15)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
-  prBadgeText:  { fontSize: 11, fontWeight: '700', color: '#FAC775' },
-  noPr:         { marginHorizontal: 16, marginBottom: 10, backgroundColor: '#1C1C1E', borderRadius: 16, padding: 16, borderWidth: 0.5, borderColor: '#2C2C2E' },
-  noPrText:     { fontSize: 14, color: '#636366', textAlign: 'center', lineHeight: 20 },
-  footer:       { padding: 16, paddingBottom: 32, borderTopWidth: 0.5, borderColor: '#2C2C2E' },
-  saveBtn:      { backgroundColor: '#00E676', borderRadius: 18, padding: 18, alignItems: 'center' },
-  saveBtnText:  { fontSize: 17, fontWeight: '700', color: '#000000' },
-  saveBtnSub:   { fontSize: 12, color: 'rgba(0,0,0,0.5)', marginTop: 4 },
+const makeStyles = (c) => StyleSheet.create({
+  screen:  { flex: 1, backgroundColor: c.backgroundSecondary },
+  handle:  { width: 36, height: 4, backgroundColor: c.borderMuted, borderRadius: 2, alignSelf: 'center', marginTop: 12 },
+  scroll:  { paddingBottom: 16 },
+
+  hero:      { paddingTop: 24, paddingHorizontal: 20, paddingBottom: 20, alignItems: 'center' },
+  heroLabel: { fontSize: 11, fontWeight: '800', color: c.accent, letterSpacing: 2, marginBottom: 8 },
+  heroTitle: { fontSize: 38, fontWeight: '800', color: c.textPrimary, marginBottom: 4 },
+  heroSub:   { fontSize: 14, color: c.textTertiary },
+
+  grid:     { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 16, marginBottom: 20 },
+  card:     { flex: 1, minWidth: '45%', backgroundColor: c.card, borderRadius: 18, padding: 14, borderWidth: 0.5, borderColor: c.border },
+  cardWide: { flexBasis: '100%', flex: 0 },
+  cardRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  cardIcon: { marginBottom: 6 },
+  cLabel:   { fontSize: 11, color: c.textSecondary, marginBottom: 3 },
+  cValue:   { fontSize: 22, fontWeight: '700', color: c.textPrimary },
+  cSub:     { fontSize: 12, color: c.textTertiary, marginTop: 5, lineHeight: 17 },
+
+  noteBox:  { flexDirection: 'row', alignItems: 'flex-start', gap: 6, backgroundColor: c.card, borderRadius: 12, padding: 12, marginTop: 10, borderWidth: 0.5, borderColor: c.border, maxWidth: '100%' },
+  noteText: { fontSize: 13, color: c.textSecondary, lineHeight: 19, flex: 1, textAlign: 'left' },
+
+  muscleSection:         { paddingHorizontal: 16, marginBottom: 20 },
+  sectionTitle:          { fontSize: 16, fontWeight: '700', color: c.textPrimary, paddingHorizontal: 16, marginBottom: 12 },
+  muscleCard:            { backgroundColor: c.card, borderRadius: 18, padding: 20, alignItems: 'center', borderWidth: 0.5, borderColor: c.border },
+  musclePlaceholder:     { alignItems: 'center', paddingVertical: 20, gap: 10 },
+  musclePlaceholderText: { fontSize: 13, color: c.borderMuted },
+
+  exCard:     { backgroundColor: c.card, marginHorizontal: 16, marginBottom: 8, borderRadius: 16, padding: 14, borderWidth: 0.5, borderColor: c.border },
+  exHeader:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 },
+  exName:     { fontSize: 14, fontWeight: '600', color: c.textPrimary, flex: 1, marginRight: 8 },
+  exTonnage:  { fontSize: 13, fontWeight: '600', color: c.textTertiary },
+  exMuscles:  { fontSize: 11, color: c.textTertiary, marginBottom: 10 },
+  exSets:     { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  setPill:    { backgroundColor: c.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
+  setPillText:{ fontSize: 12, color: c.textPrimary, fontWeight: '500' },
+  exNoSets:   { fontSize: 12, color: c.borderMuted },
+
+  prCard:     { flexDirection: 'row', alignItems: 'center', backgroundColor: c.card, marginHorizontal: 16, marginBottom: 8, borderRadius: 16, padding: 14, gap: 12, borderWidth: 0.5, borderColor: c.border },
+  prTrophy:   { width: 38, height: 38, borderRadius: 11, backgroundColor: 'rgba(255,179,71,0.15)', justifyContent: 'center', alignItems: 'center' },
+  prName:     { fontSize: 14, fontWeight: '600', color: c.textPrimary },
+  prVal:      { fontSize: 12, color: c.textSecondary, marginTop: 3 },
+  prBadge:    { backgroundColor: 'rgba(255,179,71,0.15)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  prBadgeText:{ fontSize: 11, fontWeight: '700', color: '#FAC775' },
+
+  noPr:    { marginHorizontal: 16, marginBottom: 8, backgroundColor: c.card, borderRadius: 16, padding: 16, borderWidth: 0.5, borderColor: c.border },
+  noPrText:{ fontSize: 14, color: c.textTertiary, textAlign: 'center', lineHeight: 20 },
+
+  footer:     { flexDirection: 'row', gap: 10, padding: 16, paddingBottom: 32, borderTopWidth: 0.5, borderColor: c.border },
+  discardBtn: { flex: 1, backgroundColor: c.card, borderRadius: 16, padding: 16, alignItems: 'center', borderWidth: 0.5, borderColor: c.border },
+  discardText:{ fontSize: 15, fontWeight: '600', color: c.textSecondary },
+  saveBtn:    { flex: 2, backgroundColor: c.accent, borderRadius: 16, padding: 16, alignItems: 'center' },
+  saveBtnText:{ fontSize: 16, fontWeight: '700', color: c.accentText },
 });
 
 export default WorkoutSummaryModal;

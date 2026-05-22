@@ -5,19 +5,28 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 
 import { WorkoutProvider }        from './context/WorkoutContext';
+import { ThemeProvider }          from './context/ThemeContext';
+import { useTheme }               from './context/ThemeContext';
 import TrainingScreen             from './screens/TrainingScreen';
 import ActiveWorkoutScreen        from './screens/ActiveWorkoutScreen';
 import ExercisesLibraryScreen     from './screens/ExercisesLibraryScreen';
 import DietScreen                 from './screens/DietScreen';
 import ProfileScreen              from './screens/ProfileScreen';
+import ToolsScreen                from './screens/ToolsScreen';
+import WorkoutHistoryScreen       from './screens/WorkoutHistoryScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
+const Stack2 = createNativeStackNavigator();
 
-const AppDarkTheme = {
-  ...DefaultTheme,
-  colors: { ...DefaultTheme.colors, background: '#000000' },
-};
+function ProfileStack() {
+  return (
+    <Stack2.Navigator screenOptions={{ headerShown: false }}>
+      <Stack2.Screen name="ProfileHome"    component={ProfileScreen} />
+      <Stack2.Screen name="WorkoutHistory" component={WorkoutHistoryScreen} />
+    </Stack2.Navigator>
+  );
+}
 
 function TrainingStack() {
   return (
@@ -33,31 +42,53 @@ function TrainingStack() {
   );
 }
 
+// Wydzielony komponent, żeby mógł korzystać z useTheme() wewnątrz ThemeProvider
+function AppNavigator() {
+  const { colors } = useTheme();
+
+  const navTheme = {
+    ...DefaultTheme,
+    colors: { ...DefaultTheme.colors, background: colors.background },
+  };
+
+  return (
+    <NavigationContainer theme={navTheme}>
+      <Tab.Navigator
+        screenOptions={({ route }) => ({
+          headerShown: false,
+          tabBarActiveTintColor:   colors.accent,
+          tabBarInactiveTintColor: '#8E8E93',
+          tabBarStyle: {
+            backgroundColor: colors.background,
+            borderTopColor:  colors.border,
+            borderTopWidth:  1,
+          },
+          tabBarLabelStyle: { fontSize: 12, fontWeight: '500' },
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons
+              name={{ Trening: 'barbell-outline', Dieta: 'nutrition-outline', Narzędzia: 'construct-outline', Profil: 'person-outline' }[route.name]}
+              size={size}
+              color={color}
+            />
+          ),
+        })}
+      >
+        <Tab.Screen name="Trening"   component={TrainingStack} />
+        <Tab.Screen name="Dieta"     component={DietScreen} />
+        <Tab.Screen name="Narzędzia" component={ToolsScreen} />
+        <Tab.Screen name="Profil"    component={ProfileStack} />
+      </Tab.Navigator>
+      <StatusBar style={colors.statusBar} />
+    </NavigationContainer>
+  );
+}
+
 export default function App() {
   return (
     <WorkoutProvider>
-      <NavigationContainer theme={AppDarkTheme}>
-        <Tab.Navigator
-          screenOptions={({ route }) => ({
-            headerShown: false,
-            tabBarActiveTintColor:   '#00E676',
-            tabBarInactiveTintColor: '#8E8E93',
-            tabBarStyle: { backgroundColor: '#000000', borderTopColor: '#1C1C1E', borderTopWidth: 1 },
-            tabBarLabelStyle: { fontSize: 12, fontWeight: '500' },
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons
-                name={{ Trening: 'barbell-outline', Dieta: 'nutrition-outline', Profil: 'person-outline' }[route.name]}
-                size={size} color={color}
-              />
-            ),
-          })}
-        >
-          <Tab.Screen name="Trening" component={TrainingStack} />
-          <Tab.Screen name="Dieta"   component={DietScreen} />
-          <Tab.Screen name="Profil"  component={ProfileScreen} />
-        </Tab.Navigator>
-        <StatusBar style="light" />
-      </NavigationContainer>
+      <ThemeProvider>
+        <AppNavigator />
+      </ThemeProvider>
     </WorkoutProvider>
   );
 }

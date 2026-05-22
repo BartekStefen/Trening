@@ -1,23 +1,31 @@
 import { Accelerometer } from 'expo-sensors';
-import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   useCallback, useEffect, useMemo, useRef, useState, memo,
 } from 'react';
 import {
   Alert, Animated, Image, InteractionManager, Keyboard, KeyboardAvoidingView,
-  Modal, Platform, ScrollView, StyleSheet, Text, TextInput,
-  TouchableOpacity, TouchableWithoutFeedback, View,
+  Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity,
+  View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useWorkoutContext } from '../context/WorkoutContext';
+import { useTheme } from '../context/ThemeContext';
 import { EXERCISE_DATABASE, EXERCISE_MAP } from './ExercisesLibraryScreen';
-import LiveMuscleMap           from '../components/LiveMuscleMap';
 import RestTimerBanner         from '../components/workout/RestTimerBanner';
 import WorkoutTimerHUD         from '../components/workout/WorkoutTimerHUD';
 import MuscleDistributionModal from '../components/modals/MuscleDistributionModal';
-
-const REST_PRESETS  = Array.from({ length: 55 }, (_, i) => 30 + i * 5);
-const PRESET_ITEM_H = 62;
+import SwipeableSetRow         from '../components/workout/SwipeableSetRow';
+import RestPickerModal         from '../components/modals/RestPickerModal';
+import SwapExerciseModal       from '../components/modals/SwapExerciseModal';
+import WorkoutSummaryModal     from '../components/modals/WorkoutSummaryModal';
+import WeightInputModal        from '../components/workout/WeightInputModal';
+import PlateCalculatorModal    from '../components/workout/PlateCalculatorModal';
+import ExerciseHistoryModal    from '../components/workout/ExerciseHistoryModal';
+import AddCustomExerciseModal  from '../components/workout/AddCustomExerciseModal';
+import ExerciseActionsModal    from '../components/modals/ExerciseActionsModal';
+import MachineSettingsModal   from '../components/workout/MachineSettingsModal';
+import useMuscleHeatmap       from '../hooks/useMuscleHeatmap';
 
 const GYM_KEYWORDS = [
   'kg','kilo','powt','rep','rpe','rir','zapas','seri','max','maksa','pr','rekord',
@@ -29,42 +37,6 @@ const GYM_KEYWORDS = [
   'zaloz','okolo','czuj','nastepn',
 ];
 
-const MUSCLE_REGION_MAP = {
-  'klatka': 'chest',      'piersiow': 'chest',
-  'najszerszy': 'back_lat', 'plec': 'back_lat',
-  'romboid': 'back_upper', 'trapez': 'back_upper',
-  'czworoglow': 'quads',   'poslad': 'glutes',
-  'dwuglow': 'hamstrings', 'lydki': 'calves',
-  'biceps': 'biceps',      'ramienno': 'biceps',
-  'triceps': 'triceps',
-  'bark': 'shoulders',     'naramienny': 'shoulders',
-  'brzuch': 'abs',         'prostownik': 'abs', 'poprzeczny': 'abs',
-};
-
-// FIX #3: guard Set – każdy region zliczany max raz na ćwiczenie,
-// eliminuje potrójne duplikowanie gdy wiele kluczy mapuje ten sam region.
-const buildMuscleHeatmap = (exercises) => {
-  const map = {};
-  exercises.forEach((ex) => {
-    const doneSets = ex.sets.filter((s) => s.done).length;
-    if (doneSets === 0) return;
-    const mappedRegions = new Set();
-    [...(ex.muscles ?? []), ...(ex.muscleGroup?.split(/[·,]/) ?? [])].forEach((m) => {
-      const ml = m.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      Object.entries(MUSCLE_REGION_MAP).forEach(([key, region]) => {
-        if (!mappedRegions.has(region) && ml.includes(key)) {
-          mappedRegions.add(region);
-          map[region] = (map[region] ?? 0) + doneSets;
-        }
-      });
-    });
-  });
-  return map;
-};
-
-const fmtTime = (s) =>
-  [Math.floor(s / 3600), Math.floor((s % 3600) / 60), s % 60]
-    .map((v) => String(v).padStart(2, '0')).join(':');
 const fmtDur = (s) => {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sc = s % 60;
   if (h > 0) return `${h}h ${m}m`;
@@ -72,7 +44,10 @@ const fmtDur = (s) => {
   return `${sc}s`;
 };
 
-const WorkoutHUD = ({ exercises, heatmap, onMuscleMapPress, timerRef, initialSec }) => {
+// ZADANIE 3: HUD z flexbox justify="space-evenly" – równomierny rozkład + wyśrodkowana ikonka
+const WorkoutHUD = memo(({ exercises, heatmap, onMuscleMapPress, timerRef, initialSec }) => {
+  const { colors } = useTheme();
+  const hudStyles = makeHudStyles(colors);
   const tonnage = useMemo(() =>
     exercises.reduce((acc, ex) =>
       acc + ex.sets.reduce((s, set) =>
@@ -91,21 +66,19 @@ const WorkoutHUD = ({ exercises, heatmap, onMuscleMapPress, timerRef, initialSec
 
   return (
     <View style={hudStyles.wrapper}>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={hudStyles.scrollContent}
-      >
+      <View style={hudStyles.row}>
         <View style={hudStyles.cell}>
           <Text style={hudStyles.lbl}>Czas</Text>
           <WorkoutTimerHUD ref={timerRef} initialSec={initialSec} />
         </View>
+
         <View style={hudStyles.sep} />
 
         <View style={hudStyles.cell}>
           <Text style={hudStyles.lbl}>Tonaż</Text>
           <Text style={hudStyles.valWhite}>{tonnage > 0 ? `${tonnage} kg` : '—'}</Text>
         </View>
+
         <View style={hudStyles.sep} />
 
         <View style={hudStyles.cell}>
@@ -114,47 +87,63 @@ const WorkoutHUD = ({ exercises, heatmap, onMuscleMapPress, timerRef, initialSec
             {avgRpe !== null ? `RPE ${avgRpe}` : '—'}
           </Text>
         </View>
+
         <View style={hudStyles.sep} />
 
         <View style={hudStyles.cell}>
-          <Ionicons name="water" size={10} color="#378ADD" />
-          <Text style={[hudStyles.valWhite, { color: '#378ADD' }]}>250 ml</Text>
+          <Ionicons name="water" size={10} color={colors.water} />
+          <Text style={[hudStyles.valWhite, { color: colors.water }]}>250 ml</Text>
         </View>
+
         <View style={hudStyles.sep} />
 
         <TouchableOpacity
-          style={[hudStyles.cell, hudStyles.muscleBtn]}
+          style={hudStyles.muscleCell}
           onPress={onMuscleMapPress}
           activeOpacity={0.7}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Ionicons name="body-outline" size={22} color={Object.keys(heatmap).length > 0 ? '#FF5252' : '#636366'} />
+          <Ionicons
+            name="body-outline"
+            size={22}
+            color={Object.keys(heatmap).length > 0 ? colors.danger : colors.textTertiary}
+          />
           {Object.keys(heatmap).length > 0 && (
             <View style={hudStyles.muscleBadge}>
               <Text style={hudStyles.muscleBadgeText}>{Object.keys(heatmap).length}</Text>
             </View>
           )}
         </TouchableOpacity>
-      </ScrollView>
+      </View>
     </View>
   );
-};
+});
 
-const hudStyles = StyleSheet.create({
+const makeHudStyles = (c) => StyleSheet.create({
   wrapper: {
     marginHorizontal: 16, marginBottom: 8,
-    backgroundColor: 'rgba(18,18,18,0.97)',
-    borderRadius: 14, borderWidth: 0.5, borderColor: '#2C2C2E',
+    backgroundColor: c.backgroundSecondary,
+    borderRadius: 14, borderWidth: 0.5, borderColor: c.border,
     overflow: 'hidden',
   },
-  scrollContent: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 4 },
-  cell:      { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, minWidth: 62 },
-  lbl:       { fontSize: 9, color: '#888888', marginBottom: 2, letterSpacing: 0.3 },
-  valGreen:  { fontSize: 13, fontWeight: '700', color: '#00E676', fontVariant: ['tabular-nums'] },
-  valWhite:  { fontSize: 13, fontWeight: '700', color: '#FFFFFF', fontVariant: ['tabular-nums'] },
-  sep:       { width: 0.5, height: 28, backgroundColor: '#2C2C2E' },
-  muscleBtn:       { paddingHorizontal: 14, position: 'relative' },
-  muscleBadge:     { position: 'absolute', top: -4, right: 6, backgroundColor: '#FF5252', borderRadius: 7, minWidth: 14, height: 14, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 3 },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-evenly',
+    paddingVertical: 8,
+  },
+  cell:       { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2 },
+  muscleCell: { flex: 1, alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  lbl:        { fontSize: 9, color: c.textSecondary, letterSpacing: 0.3 },
+  valWhite:   { fontSize: 13, fontWeight: '700', color: c.textPrimary, fontVariant: ['tabular-nums'] },
+  sep:        { width: 0.5, height: 28, backgroundColor: c.border },
+  muscleBadge: {
+    position: 'absolute', top: -6, right: 6,
+    backgroundColor: '#FF5252', borderRadius: 7,
+    minWidth: 14, height: 14,
+    justifyContent: 'center', alignItems: 'center',
+    paddingHorizontal: 3,
+  },
   muscleBadgeText: { fontSize: 9, fontWeight: '700', color: '#FFFFFF' },
 });
 
@@ -164,6 +153,7 @@ const UPPER_EXERCISES = () => [
     description: 'Opuść kontrolowanie do klatki, wypychaj eksplozywnie. Łopatki ściągnięte.',
     muscles: ['Klatka piersiowa', 'Triceps', 'Przedni bark'],
     alternatives: ['c3', 'c5'], restDuration: 120, nextTrainingKg: null,
+    lastPerformedDate: new Date(Date.now() - 35 * 24 * 3600 * 1000).toISOString(),
     image: 'https://via.placeholder.com/40/2C2C2E/636366?text=WS',
     sets: [
       { id: 's1', prevLog: '80 kg x 8', kg: '80', reps: '8', rpe: '8', done: false, suggested: null, aiSuggested: false },
@@ -176,6 +166,7 @@ const UPPER_EXERCISES = () => [
     description: 'Tułów ~45°. Przyciągaj do brzucha, łokcie blisko ciała.',
     muscles: ['Najszerszy grzbietu', 'Biceps', 'Tylny bark'],
     alternatives: ['b4', 'b5'], restDuration: 90, nextTrainingKg: null,
+    lastPerformedDate: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString(),
     image: 'https://via.placeholder.com/40/2C2C2E/636366?text=WS',
     sets: [
       { id: 's4', prevLog: '90 kg x 8', kg: '', reps: '', rpe: '', done: false, suggested: null, aiSuggested: false },
@@ -258,84 +249,214 @@ const convertLibraryExercise = (ex, index) => ({
   ],
 });
 
+// ─── Epley 1RM: waga × (1 + powt/30) ────────────────────────────────────────
+const calcEpley1RM = (kg, reps) => {
+  const w = parseFloat(kg);
+  const r = parseInt(reps);
+  if (!w || !r || r <= 0) return null;
+  if (r === 1) return w;
+  return Math.round(w * (1 + r / 30) * 2) / 2;
+};
+
+// ─── Krzywa Zaniku 1RM: -5% na każde 4 tygodnie przerwy (max -30%) ───────────
+const applyDecayCurve = (oneRM, lastPerformedDate) => {
+  if (!oneRM || !lastPerformedDate) return { decayed: oneRM, weeksOff: 0, decayPct: 0 };
+  const msOff    = Date.now() - new Date(lastPerformedDate).getTime();
+  const weeksOff = msOff / (7 * 24 * 3600 * 1000);
+  if (weeksOff < 4) return { decayed: oneRM, weeksOff: Math.floor(weeksOff), decayPct: 0 };
+  const periods  = Math.floor(weeksOff / 4);
+  const decayPct = Math.min(periods * 5, 30);
+  const decayed  = Math.round(oneRM * (1 - decayPct / 100) * 2) / 2;
+  return { decayed, weeksOff: Math.floor(weeksOff), decayPct };
+};
+
 const calculateAPRE = (sets, prevLog) => {
   const lastDone = [...sets].reverse().find((s) => s.done && s.kg);
   const rawFirst = (prevLog ?? '').split(' ')[0] ?? '0';
   const baseKg   = lastDone ? parseFloat(lastDone.kg) : parseFloat(rawFirst);
   const baseReps = lastDone?.reps || (prevLog ?? '').split('x')[1]?.trim().split(' ')[0] || '8';
   if (isNaN(baseKg) || baseKg === 0) return { suggestedKg: null, label: '—' };
-  const rpe   = lastDone ? parseFloat(lastDone.rpe) : NaN;
-  const rir   = isNaN(rpe) ? NaN : 10 - rpe;
-  const delta = isNaN(rir) ? 2.5 : rir >= 3 ? 5 : rir >= 1 ? 2.5 : -(baseKg * 0.05);
+  const rpe     = lastDone ? parseFloat(lastDone.rpe) : NaN;
+  const rir     = isNaN(rpe) ? NaN : 10 - rpe;
+  const delta   = isNaN(rir) ? 2.5 : rir >= 3 ? 5 : rir >= 1 ? 2.5 : -(baseKg * 0.05);
   const rounded = Math.round(Math.max(0, baseKg + delta) * 2) / 2;
   return { suggestedKg: rounded, label: `${rounded} kg x ${baseReps}` };
 };
 
-// FIX #1 (ActiveWorkoutScreen side): normalizacja w parseSlangInput
+// ─── Pływający Widget 1RM ─────────────────────────────────────────────────────
+const OneRMWidget = memo(function OneRMWidget({ sets, lastPerformedDate, colors }) {
+  const [expanded, setExpanded] = useState(false);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  const bestSet = useMemo(() => {
+    const done = sets.filter((s) => s.done && parseFloat(s.kg) > 0 && parseInt(s.reps) > 0);
+    if (!done.length) {
+      // Jeśli nic nie zaliczone — bierz pierwszy wiersz z wypełnionymi danymi
+      return sets.find((s) => parseFloat(s.kg) > 0 && parseInt(s.reps) > 0) ?? null;
+    }
+    return done.reduce((best, s) => {
+      const orm = calcEpley1RM(s.kg, s.reps);
+      return orm > (calcEpley1RM(best.kg, best.reps) ?? 0) ? s : best;
+    }, done[0]);
+  }, [sets]);
+
+  const rawOneRM = bestSet ? calcEpley1RM(bestSet.kg, bestSet.reps) : null;
+  const { decayed, weeksOff, decayPct } = useMemo(
+    () => applyDecayCurve(rawOneRM, lastPerformedDate),
+    [rawOneRM, lastPerformedDate],
+  );
+
+  const hasDecay = decayPct > 0;
+
+  useEffect(() => {
+    if (!hasDecay) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.08, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1,    duration: 900, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [hasDecay]);
+
+  if (!rawOneRM) return null;
+
+  const widgetStyles = makeWidgetStyles(colors);
+
+  return (
+    <TouchableOpacity
+      style={[widgetStyles.chip, hasDecay && widgetStyles.chipDecay]}
+      onPress={() => setExpanded((v) => !v)}
+      activeOpacity={0.8}
+    >
+      <Animated.View style={[widgetStyles.chipInner, hasDecay && { transform: [{ scale: pulseAnim }] }]}>
+        <Text style={widgetStyles.chipLabel}>1RM</Text>
+        <Text style={[widgetStyles.chipValue, hasDecay && widgetStyles.chipValueDecay]}>
+          {decayed} kg
+        </Text>
+        {hasDecay && (
+          <View style={widgetStyles.decayBadge}>
+            <Text style={widgetStyles.decayBadgeText}>-{decayPct}%</Text>
+          </View>
+        )}
+        <Ionicons
+          name={expanded ? 'chevron-up' : 'chevron-down'}
+          size={11}
+          color={hasDecay ? colors.warning : colors.textTertiary}
+        />
+      </Animated.View>
+
+      {expanded && (
+        <View style={widgetStyles.expanded}>
+          <View style={widgetStyles.expandRow}>
+            <Text style={widgetStyles.expandLabel}>Surowe 1RM (Epley)</Text>
+            <Text style={widgetStyles.expandValue}>{rawOneRM} kg</Text>
+          </View>
+          {hasDecay && (
+            <>
+              <View style={widgetStyles.expandRow}>
+                <Text style={widgetStyles.expandLabel}>Przerwa w ćwiczeniu</Text>
+                <Text style={[widgetStyles.expandValue, { color: colors.warning }]}>{weeksOff} tygodni</Text>
+              </View>
+              <View style={widgetStyles.expandRow}>
+                <Text style={widgetStyles.expandLabel}>Zastosowany zanik</Text>
+                <Text style={[widgetStyles.expandValue, { color: colors.danger }]}>-{decayPct}%</Text>
+              </View>
+              <Text style={widgetStyles.decayTip}>
+                ⚠️ Wznów ćwiczenie — 1RM zostanie przywrócone po 4 tygodniach regularnych treningów.
+              </Text>
+            </>
+          )}
+          <View style={widgetStyles.expandRow}>
+            <Text style={widgetStyles.expandLabel}>Ostatni wynik</Text>
+            <Text style={widgetStyles.expandValue}>{bestSet?.kg} kg × {bestSet?.reps} powt.</Text>
+          </View>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+});
+
+const makeWidgetStyles = (c) => StyleSheet.create({
+  chip: {
+    alignSelf: 'flex-end',
+    backgroundColor: c.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: c.border,
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
+  chipDecay: { borderColor: c.warning },
+  chipInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  chipLabel:      { fontSize: 9, fontWeight: '700', color: c.textTertiary, letterSpacing: 0.8 },
+  chipValue:      { fontSize: 13, fontWeight: '700', color: c.accent },
+  chipValueDecay: { color: c.warning },
+  decayBadge:     { backgroundColor: c.dangerSoft, borderRadius: 6, paddingHorizontal: 4, paddingVertical: 1 },
+  decayBadgeText: { fontSize: 9, fontWeight: '700', color: c.danger },
+  expanded:       { padding: 10, paddingTop: 6, borderTopWidth: 0.5, borderTopColor: c.border, gap: 6 },
+  expandRow:      { flexDirection: 'row', justifyContent: 'space-between' },
+  expandLabel:    { fontSize: 11, color: c.textTertiary },
+  expandValue:    { fontSize: 11, fontWeight: '600', color: c.textPrimary },
+  decayTip:       { fontSize: 10, color: c.warning, lineHeight: 14, fontStyle: 'italic' },
+});
+
 const parseSlangInput = (inputText) => {
   if (!inputText) return null;
-  const normalizedText = inputText.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-
+  const n = inputText.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const patterns = [
     /(?:zapas(?:u|em)?|zostalo|rir)\s*(?:na\s*)?(\d+)\s*/i,
     /(\d+)\s*(?:zapas|zostalo|rir)\s*/i,
     /(?:na\s*)?(\d+)\s*(?:w\s*)?(?:zapas|rezerw)\s*/i,
     /rpe\s*(\d+(?:[.,]\d+)?)\s*/i,
   ];
-
   for (const pat of patterns) {
-    const m = normalizedText.match(pat);
+    const m = n.match(pat);
     if (m) {
       const val = parseFloat(m[1].replace(',', '.'));
       if (pat.source.includes('rpe')) return { rir: Math.max(0, Math.round(10 - val)) };
       return { rir: Math.round(val) };
     }
   }
-
-  if (/\b(?:max|upadek|fail)\b/.test(normalizedText))                          return { rir: 0 };
-  if (/\b(?:lekko|luz|git|okej|ok|izi|izzi|gladko|poszlo)\b/.test(normalizedText)) return { rir: 3 };
-  if (/\b(?:ciezko|smierc|masakra|opor|zajechany)\b/.test(normalizedText))     return { rir: 0 };
-
+  if (/\b(?:max|upadek|fail)\b/.test(n))                          return { rir: 0 };
+  if (/\b(?:lekko|luz|git|okej|ok|izi|izzi|gladko|poszlo)\b/.test(n)) return { rir: 3 };
+  if (/\b(?:ciezko|smierc|masakra|opor|zajechany)\b/.test(n))     return { rir: 0 };
   return null;
 };
 
-const deltaFromRir = (rir) => {
-  if (rir >= 3) return 5;
-  if (rir >= 1) return 2.5;
-  return 0;
-};
+const deltaFromRir = (rir) => rir >= 3 ? 5 : rir >= 1 ? 2.5 : 0;
 
 const analyzeWorkoutNoteHybrid = async ({ note, uiKg, uiReps, isLastSet }) => {
   const raw        = (note ?? '').trim();
   const normalized = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-
   if (!raw && !uiKg) return { type: 'empty', message: 'Opisz serię lub uzupełnij pola kg / RPE.' };
-
   const hasGymKw = GYM_KEYWORDS.some((kw) => normalized.includes(kw));
   if (raw && !hasGymKw) return { type: 'blocked', message: '❌ Odrzucono: Komunikat niezwiązany z treningiem.' };
-
   const kgMatch       = normalized.match(/(\d+(?:[.,]\d+)?)\s*(?:kg|kilo(?:gram)?)/);
   const extractedKg   = kgMatch ? parseFloat(kgMatch[1].replace(',', '.')) : null;
   const repsMatch     = normalized.match(/(?:na|x)\s*(\d+)|(\d+)\s*powt/);
   const extractedReps = repsMatch ? parseInt(repsMatch[1] ?? repsMatch[2]) : null;
-
-  const currentKg   = extractedKg   ?? parseFloat(uiKg)  ?? null;
-  const currentReps = extractedReps ?? parseInt(uiReps)   ?? null;
+  const currentKg     = extractedKg   ?? parseFloat(uiKg)  ?? null;
+  const currentReps   = extractedReps ?? parseInt(uiReps)   ?? null;
   if (!currentKg) return { type: 'error', message: '❌ Nie znaleziono ciężaru.' };
-
   const slang = parseSlangInput(raw);
   const rir   = slang?.rir ?? null;
-
   if (rir !== null) {
     const deltaKg  = deltaFromRir(rir);
     const findings = rir >= 3 ? `Duży zapas sił (RIR ${rir})` : rir >= 1 ? `Umiarkowany zapas (RIR ${rir})` : 'RIR 0 – limit intensywności';
-    const decision = rir >= 3 ? `+${deltaKg} kg` : rir >= 1 ? `+${deltaKg} kg` : 'Utrzymaj ciężar';
+    const decision = rir >= 1 ? `+${deltaKg} kg` : 'Utrzymaj ciężar';
     const newKg    = Math.round(Math.max(0, currentKg + deltaKg) * 2) / 2;
     const base     = { type: 'math', status: 'Analiza lokalna (slang NLP)', findings, decision, suggestedKg: newKg, suggestedReps: currentReps };
     if (isLastSet) return { ...base, isLastSet: true, nextTrainingKg: newKg, decision: `AI zapisało ${newKg} kg na kolejny trening.` };
     return base;
   }
-
   try {
     await new Promise((res) => setTimeout(res, 1500));
     const base = { type: 'cloud', status: 'Cloud AI', findings: 'Złożony wzorzec', decision: 'Deload -5 kg', suggestedKg: currentKg, suggestedReps: currentReps };
@@ -346,14 +467,10 @@ const analyzeWorkoutNoteHybrid = async ({ note, uiKg, uiReps, isLastSet }) => {
   }
 };
 
-import SwipeableSetRow      from '../components/workout/SwipeableSetRow';
-import RestPickerModal      from '../components/modals/RestPickerModal';
-import SwapExerciseModal    from '../components/modals/SwapExerciseModal';
-import WorkoutSummaryModal  from '../components/modals/WorkoutSummaryModal';
-import PlateCalculatorModal from '../components/workout/PlateCalculatorModal';
-import DropSetButton from '../components/workout/DropSetButton';
-
-const ConfirmModal = ({ visible, title, body, confirmLabel, confirmDanger, onConfirm, onCancel }) => (
+const ConfirmModal = ({ visible, title, body, confirmLabel, confirmDanger, onConfirm, onCancel }) => {
+  const { colors } = useTheme();
+  const confirmStyles = makeConfirmStyles(colors);
+  return (
   <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancel}>
     <View style={confirmStyles.backdrop}>
       <View style={confirmStyles.box}>
@@ -373,21 +490,25 @@ const ConfirmModal = ({ visible, title, body, confirmLabel, confirmDanger, onCon
       </View>
     </View>
   </Modal>
-);
+  );
+};
 
-const confirmStyles = StyleSheet.create({
+const makeConfirmStyles = (c) => StyleSheet.create({
   backdrop:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.82)', justifyContent: 'center', alignItems: 'center', padding: 32 },
-  box:         { backgroundColor: '#1C1C1E', borderRadius: 20, padding: 24, width: '100%', borderWidth: 0.5, borderColor: '#2C2C2E' },
-  title:       { fontSize: 18, fontWeight: '700', color: '#FFFFFF', marginBottom: 12, textAlign: 'center' },
-  body:        { fontSize: 14, color: '#8E8E93', lineHeight: 22, textAlign: 'center', marginBottom: 24 },
+  box:         { backgroundColor: c.card, borderRadius: 20, padding: 24, width: '100%', borderWidth: 0.5, borderColor: c.border },
+  title:       { fontSize: 18, fontWeight: '700', color: c.textPrimary, marginBottom: 12, textAlign: 'center' },
+  body:        { fontSize: 14, color: c.textSecondary, lineHeight: 22, textAlign: 'center', marginBottom: 24 },
   actions:     { flexDirection: 'row', gap: 10 },
-  cancelBtn:   { flex: 1, backgroundColor: '#2C2C2E', borderRadius: 14, padding: 14, alignItems: 'center' },
-  cancelText:  { fontSize: 15, fontWeight: '600', color: '#8E8E93' },
-  confirmBtn:  { flex: 1, backgroundColor: '#00E676', borderRadius: 14, padding: 14, alignItems: 'center' },
-  confirmText: { fontSize: 15, fontWeight: '700', color: '#000000' },
+  cancelBtn:   { flex: 1, backgroundColor: c.border, borderRadius: 14, padding: 14, alignItems: 'center' },
+  cancelText:  { fontSize: 15, fontWeight: '600', color: c.textSecondary },
+  confirmBtn:  { flex: 1, backgroundColor: c.accent, borderRadius: 14, padding: 14, alignItems: 'center' },
+  confirmText: { fontSize: 15, fontWeight: '700', color: c.accentText },
 });
 
-const ExerciseInfoModal = ({ visible, exercise, onClose }) => (
+const ExerciseInfoModal = ({ visible, exercise, onClose }) => {
+  const { colors } = useTheme();
+  const infoStyles = makeInfoStyles(colors);
+  return (
   <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
     <View style={infoStyles.screen}>
       <View style={infoStyles.handle} />
@@ -413,51 +534,265 @@ const ExerciseInfoModal = ({ visible, exercise, onClose }) => (
       </ScrollView>
     </View>
   </Modal>
-);
+  );
+};
 
-const infoStyles = StyleSheet.create({
-  screen:           { flex: 1, backgroundColor: '#111111' },
-  handle:           { width: 36, height: 4, backgroundColor: '#3A3A3C', borderRadius: 2, alignSelf: 'center', marginTop: 12 },
-  closeBtn:         { position: 'absolute', top: 16, right: 16, width: 32, height: 32, borderRadius: 10, backgroundColor: '#2C2C2E', justifyContent: 'center', alignItems: 'center', zIndex: 10 },
+const makeInfoStyles = (c) => StyleSheet.create({
+  screen:           { flex: 1, backgroundColor: c.backgroundSecondary },
+  handle:           { width: 36, height: 4, backgroundColor: c.borderMuted, borderRadius: 2, alignSelf: 'center', marginTop: 12 },
+  closeBtn:         { position: 'absolute', top: 16, right: 16, width: 32, height: 32, borderRadius: 10, backgroundColor: c.border, justifyContent: 'center', alignItems: 'center', zIndex: 10 },
   content:          { padding: 24, paddingTop: 16 },
-  title:            { fontSize: 22, fontWeight: '700', color: '#FFFFFF', marginBottom: 4 },
-  subtitle:         { fontSize: 13, color: '#8E8E93', marginBottom: 20 },
-  imagePlaceholder: { height: 160, backgroundColor: '#1C1C1E', borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginBottom: 24, gap: 10, borderWidth: 0.5, borderColor: '#2C2C2E' },
-  imageText:        { fontSize: 13, color: '#3A3A3C' },
-  sl:               { fontSize: 11, fontWeight: '700', color: '#636366', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 },
-  description:      { fontSize: 15, color: '#EBEBEB', lineHeight: 23, marginBottom: 24 },
+  title:            { fontSize: 22, fontWeight: '700', color: c.textPrimary, marginBottom: 4 },
+  subtitle:         { fontSize: 13, color: c.textSecondary, marginBottom: 20 },
+  imagePlaceholder: { height: 160, backgroundColor: c.card, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginBottom: 24, gap: 10, borderWidth: 0.5, borderColor: c.border },
+  imageText:        { fontSize: 13, color: c.borderMuted },
+  sl:               { fontSize: 11, fontWeight: '700', color: c.textTertiary, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 },
+  description:      { fontSize: 15, color: c.textPrimary, lineHeight: 23, marginBottom: 24 },
   muscleRow:        { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  dot:              { width: 6, height: 6, borderRadius: 3, backgroundColor: '#00E676' },
-  muscleText:       { fontSize: 15, color: '#FFFFFF' },
+  dot:              { width: 6, height: 6, borderRadius: 3, backgroundColor: c.accent },
+  muscleText:       { fontSize: 15, color: c.textPrimary },
 });
 
-// FIX #4: miniaturka ćwiczenia w stylu Hevy – Image 40×40 z lewej strony nazwy
+// ─── SupersetPickerModal — wybór ćwiczenia do połączenia ─────────────────────
+const SupersetPickerModal = memo(function SupersetPickerModal({
+  visible, exercises, fromExIdx, supersetGroups, onConnect, onClose, colors,
+}) {
+  const fromEx      = exercises[fromExIdx];
+  const fromGroupId = fromEx ? supersetGroups[fromEx.id] : null;
+
+  const pickerStyles = makeSupersetPickerStyles(colors);
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <View style={pickerStyles.screen}>
+        <View style={pickerStyles.handle} />
+        <View style={pickerStyles.topBar}>
+          <View style={pickerStyles.iconCircle}>
+            <Text style={{ fontSize: 18 }}>⛓️</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={pickerStyles.title}>Połącz Super-Serię</Text>
+            <Text style={pickerStyles.subtitle} numberOfLines={1}>
+              {fromEx?.name ?? ''}
+            </Text>
+          </View>
+          <TouchableOpacity style={pickerStyles.closeBtn} onPress={onClose} activeOpacity={0.7}>
+            <Ionicons name="close" size={18} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+
+        <Text style={pickerStyles.hint}>
+          Wybierz ćwiczenia, które mają tworzyć super-serię z powyższym. Odznacz, by rozłączyć.
+        </Text>
+
+        <ScrollView contentContainerStyle={pickerStyles.list} showsVerticalScrollIndicator={false}>
+          {exercises.map((ex, idx) => {
+            if (idx === fromExIdx) return null;
+            const isConnected = fromGroupId && supersetGroups[ex.id] === fromGroupId;
+            const color = isConnected
+              ? supersetColor(fromGroupId)
+              : colors.textSecondary;
+            return (
+              <TouchableOpacity
+                key={ex.id}
+                style={[pickerStyles.row, isConnected && pickerStyles.rowActive]}
+                onPress={() => onConnect(fromExIdx, ex.id, isConnected)}
+                activeOpacity={0.75}
+              >
+                <View style={[pickerStyles.rowNum, isConnected && { borderColor: color }]}>
+                  <Text style={[pickerStyles.rowNumText, isConnected && { color }]}>
+                    {idx + 1}
+                  </Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[pickerStyles.rowName, isConnected && { color }]}>
+                    {ex.name}
+                  </Text>
+                  <Text style={pickerStyles.rowMuscles} numberOfLines={1}>
+                    {ex.muscleGroup}
+                  </Text>
+                </View>
+                <View style={[pickerStyles.checkCircle, isConnected && { backgroundColor: color, borderColor: color }]}>
+                  {isConnected && <Ionicons name="checkmark" size={14} color="#000" />}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        <TouchableOpacity style={pickerStyles.doneBtn} onPress={onClose} activeOpacity={0.8}>
+          <Text style={pickerStyles.doneBtnText}>Gotowe</Text>
+        </TouchableOpacity>
+      </View>
+    </Modal>
+  );
+});
+
+const makeSupersetPickerStyles = (c) => StyleSheet.create({
+  screen:     { flex: 1, backgroundColor: c.backgroundSecondary },
+  handle:     { width: 36, height: 4, backgroundColor: c.borderMuted, borderRadius: 2, alignSelf: 'center', marginTop: 12 },
+  topBar:     { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 14 },
+  iconCircle: { width: 40, height: 40, borderRadius: 12, backgroundColor: c.librarySoft, justifyContent: 'center', alignItems: 'center' },
+  title:      { fontSize: 17, fontWeight: '700', color: c.textPrimary },
+  subtitle:   { fontSize: 12, color: c.textSecondary, marginTop: 1 },
+  closeBtn:   { width: 32, height: 32, borderRadius: 10, backgroundColor: c.border, justifyContent: 'center', alignItems: 'center' },
+  hint:       { fontSize: 12, color: c.textTertiary, paddingHorizontal: 20, paddingBottom: 12, lineHeight: 18 },
+  list:       { paddingHorizontal: 16, paddingBottom: 16, gap: 8 },
+  row: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: c.card, borderRadius: 16,
+    padding: 14, borderWidth: 0.5, borderColor: c.border,
+  },
+  rowActive:      { borderColor: c.library },
+  rowNum:         { width: 28, height: 28, borderRadius: 8, borderWidth: 1.5, borderColor: c.border, justifyContent: 'center', alignItems: 'center' },
+  rowNumText:     { fontSize: 12, fontWeight: '700', color: c.textTertiary },
+  rowName:        { fontSize: 15, fontWeight: '600', color: c.textPrimary },
+  rowMuscles:     { fontSize: 11, color: c.textTertiary, marginTop: 2 },
+  checkCircle:    { width: 26, height: 26, borderRadius: 13, borderWidth: 1.5, borderColor: c.borderMuted, justifyContent: 'center', alignItems: 'center' },
+  doneBtn:        { margin: 16, backgroundColor: c.accent, borderRadius: 16, height: 50, justifyContent: 'center', alignItems: 'center' },
+  doneBtnText:    { fontSize: 16, fontWeight: '700', color: c.accentText },
+});
+
+// ─── Super-seria: konektor z pulsującą poświatą ───────────────────────────────
+const SupersetConnector = memo(function SupersetConnector({ colors, groupColor }) {
+  const pulseAnim = useRef(new Animated.Value(0.4)).current;
+  const glow      = groupColor ?? colors.library;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1,   duration: 900, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 0.4, duration: 900, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
+
+  return (
+    <View style={{ marginHorizontal: 16, marginBottom: 0, alignItems: 'flex-start' }}>
+      <Animated.View style={{
+        width: 3,
+        height: 28,
+        borderRadius: 2,
+        backgroundColor: glow,
+        marginLeft: 28,
+        opacity: pulseAnim,
+        shadowColor: glow,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.9,
+        shadowRadius: 8,
+        elevation: 8,
+      }} />
+      <View style={{
+        position: 'absolute',
+        left: 14,
+        top: 8,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+      }}>
+        <Animated.View style={{
+          width: 16,
+          height: 1,
+          backgroundColor: glow,
+          opacity: pulseAnim,
+        }} />
+        <Text style={{ fontSize: 8, color: glow, fontWeight: '700', letterSpacing: 0.5 }}>
+          SUPER-SERIA
+        </Text>
+      </View>
+    </View>
+  );
+});
+
+// Kolory grup super-serii
+const SUPERSET_COLORS = ['#A78BFA', '#38BDF8', '#FB923C', '#34D399', '#F472B6'];
+const supersetColor = (groupId) => {
+  if (!groupId) return null;
+  const hash = [...groupId].reduce((a, c) => a + c.charCodeAt(0), 0);
+  return SUPERSET_COLORS[hash % SUPERSET_COLORS.length];
+};
+
 const ExerciseCard = memo(function ExerciseCard({
   exercise, exIndex,
   onUpdateSet, onToggleSet, onDeleteSet, onAddSet,
   onRestChange, onInfoPress, onCascadeUpdate,
   onDeleteExercise, onSwapExercise,
-  onDropSetPress, onWeightPress,
+  onDropSetPress,
+  supersetGroup,
+  onToggleSuperset,
 }) {
-  const [restModal, setRestModal]         = useState(false);
-  const [swapModal, setSwapModal]         = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const { colors } = useTheme();
+  const cardStyles = makeCardStyles(colors);
+  const [restModal, setRestModal]                   = useState(false);
+  const [swapModal, setSwapModal]                   = useState(false);
+  const [actionsModal, setActionsModal]             = useState(false);
+  const [plateCalcKg, setPlateCalcKg]               = useState(null);
+  const [historyVisible, setHistoryVisible]         = useState(false);
+  const [machineSettingsVisible, setMachineSettingsVisible] = useState(false);
+  const glowAnim = useRef(new Animated.Value(0)).current;
+  const glowColor = supersetGroup ? supersetColor(supersetGroup) : null;
 
-  const fmt       = (s) => s < 60 ? `${s} s` : `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')} min`;
+  useEffect(() => {
+    if (!supersetGroup) { glowAnim.setValue(0); return; }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, { toValue: 1,   duration: 1200, useNativeDriver: false }),
+        Animated.timing(glowAnim, { toValue: 0.3, duration: 1200, useNativeDriver: false }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [supersetGroup]);
+
+  const fmt       = (s) => s < 60 ? `${s} s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} min`;
   const progression = useMemo(
     () => calculateAPRE(exercise.sets, exercise.sets[0]?.prevLog),
     [exercise.sets],
   );
 
+  // ZADANIE 4: limit 3 drop-setów per ćwiczenie
+  const dropSetCount     = exercise.sets.filter((s) => s.isDropSet).length;
+  const dropSetLimitReached = dropSetCount >= 3;
+
+  const confirmDeleteExercise = () => {
+    Alert.alert(
+      'Usuń ćwiczenie?',
+      `Czy na pewno chcesz usunąć\n${exercise.name}\nz tego treningu?`,
+      [
+        { text: 'Anuluj', style: 'cancel' },
+        { text: 'Usuń', style: 'destructive', onPress: onDeleteExercise },
+      ],
+    );
+  };
+
+  // Potwierdzenie odbywa się w SwipeableSetRow — tu już bezpośrednio usuwamy
+
+  const borderColorAnim = glowColor
+    ? glowAnim.interpolate({ inputRange: [0, 1], outputRange: [colors.border, glowColor] })
+    : colors.border;
+
   return (
-    <View style={cardStyles.card}>
+    <Animated.View style={[
+      cardStyles.card,
+      supersetGroup && { borderColor: borderColorAnim, borderWidth: 1.5 },
+    ]}>
+      {supersetGroup && (
+        <View style={[cardStyles.supersetBadge, { backgroundColor: glowColor + '22', borderColor: glowColor }]}>
+          <Text style={[cardStyles.supersetBadgeText, { color: glowColor }]}>⚡ Super-Seria</Text>
+        </View>
+      )}
       <View style={cardStyles.header}>
-        {/* FIX #4: miniaturka z EXERCISE_DATABASE / convertLibraryExercise */}
         <Image
           source={{ uri: exercise.image ?? 'https://via.placeholder.com/40/2C2C2E/636366?text=EX' }}
           style={cardStyles.thumbnail}
         />
-        <View style={{ flex: 1, marginRight: 10 }}>
+        <View style={{ flex: 1, marginRight: 6 }}>
           <Text style={cardStyles.name}>{exercise.name}</Text>
           <Text style={cardStyles.muscles}>{exercise.muscleGroup}</Text>
           {exercise.nextTrainingKg != null && (
@@ -469,6 +804,22 @@ const ExerciseCard = memo(function ExerciseCard({
         <TouchableOpacity style={cardStyles.infoBtn} onPress={onInfoPress} activeOpacity={0.7}>
           <Ionicons name="information-circle-outline" size={20} color="#8E8E93" />
         </TouchableOpacity>
+        <TouchableOpacity
+          style={cardStyles.infoBtn}
+          onPress={() => setHistoryVisible(true)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="time-outline" size={20} color="#8E8E93" />
+        </TouchableOpacity>
+        {/* menu kontekstowe */}
+        <TouchableOpacity
+          style={cardStyles.moreBtn}
+          onPress={() => setActionsModal(true)}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="ellipsis-horizontal" size={18} color="#636366" />
+        </TouchableOpacity>
       </View>
 
       <TouchableOpacity style={cardStyles.restChip} onPress={() => setRestModal(true)} activeOpacity={0.7}>
@@ -476,6 +827,13 @@ const ExerciseCard = memo(function ExerciseCard({
         <Text style={cardStyles.restChipText}>Przerwa: {fmt(exercise.restDuration)}</Text>
         <Ionicons name="chevron-down" size={12} color="#3A3A3C" />
       </TouchableOpacity>
+
+      {/* Pływający Widget 1RM */}
+      <OneRMWidget
+        sets={exercise.sets}
+        lastPerformedDate={exercise.lastPerformedDate ?? null}
+        colors={colors}
+      />
 
       <View style={cardStyles.colHeaders}>
         <View style={{ width: 20 }} />
@@ -496,9 +854,9 @@ const ExerciseCard = memo(function ExerciseCard({
           onUpdate={(field, value) => onUpdateSet(exIndex, set.id, field, value)}
           onToggleComplete={() => onToggleSet(exIndex, set.id)}
           onDeleteSet={() => onDeleteSet(exIndex, set.id)}
+          onDeleteExercise={confirmDeleteExercise}
           onCascadeUpdate={(newKg, newReps) => onCascadeUpdate(exIndex, idx, newKg, newReps, null)}
           onDropSetPress={() => onDropSetPress?.(exIndex, idx)}
-          onWeightPress={(w) => onWeightPress?.(w)}
         />
       ))}
 
@@ -513,7 +871,7 @@ const ExerciseCard = memo(function ExerciseCard({
           <Ionicons name="swap-horizontal" size={15} color="#8E8E93" />
           <Text style={cardStyles.actionSwapText}>Zamień</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={cardStyles.deleteExBtn} onPress={() => setDeleteConfirm(true)} activeOpacity={0.7}>
+        <TouchableOpacity style={cardStyles.deleteExBtn} onPress={confirmDeleteExercise} activeOpacity={0.7}>
           <Ionicons name="trash-outline" size={16} color="#FF5252" />
         </TouchableOpacity>
       </View>
@@ -529,46 +887,87 @@ const ExerciseCard = memo(function ExerciseCard({
         currentExercise={exercise}
         exerciseDatabase={EXERCISE_DATABASE}
         exerciseMap={EXERCISE_MAP}
-        onSwap={(newEx) => { onSwapExercise(exIndex, newEx); setSwapModal(false); }}
+        currentSets={exercise.sets}
+        onSwap={(newEx, adjustedSets) => { onSwapExercise(exIndex, newEx, adjustedSets); setSwapModal(false); }}
         onClose={() => setSwapModal(false)}
       />
-      <ConfirmModal
-        visible={deleteConfirm}
-        title="Usuń ćwiczenie?"
-        body={`Czy na pewno chcesz usunąć\n${exercise.name}\nz tego treningu?`}
-        confirmLabel="Usuń"
-        confirmDanger
-        onConfirm={() => { setDeleteConfirm(false); onDeleteExercise(); }}
-        onCancel={() => setDeleteConfirm(false)}
+
+      {/* Wizualizacja sztangi z wpisem kg */}
+      <PlateCalculatorModal
+        isVisible={plateCalcKg !== null}
+        initialWeight={plateCalcKg ?? 20}
+        onClose={() => setPlateCalcKg(null)}
       />
-    </View>
+
+      {/* Historia ćwiczenia */}
+      <ExerciseHistoryModal
+        isVisible={historyVisible}
+        exerciseName={exercise.name}
+        onClose={() => setHistoryVisible(false)}
+      />
+
+      <ExerciseActionsModal
+        isVisible={actionsModal}
+        exerciseName={exercise.name}
+        dropSetLimitReached={dropSetLimitReached}
+        isInSuperset={!!supersetGroup}
+        onClose={() => setActionsModal(false)}
+        onPlateCalc={() => {
+          setActionsModal(false);
+          const lastWithKg = [...exercise.sets].reverse().find((s) => parseFloat(s.kg) > 0);
+          const kg = parseFloat(lastWithKg?.kg ?? '0');
+          setPlateCalcKg(kg > 0 ? kg : 20);
+        }}
+        onDropSet={() => {
+          setActionsModal(false);
+          if (dropSetLimitReached) return;
+          const lastIdx = exercise.sets.reduce((best, s, i) =>
+            parseFloat(s.kg) > 0 ? i : best, -1);
+          if (lastIdx >= 0) onDropSetPress?.(exIndex, lastIdx);
+        }}
+        onSwap={() => { setActionsModal(false); setSwapModal(true); }}
+        onDelete={() => { setActionsModal(false); confirmDeleteExercise(); }}
+        onToggleSuperset={() => { setActionsModal(false); onToggleSuperset?.(exIndex); }}
+        onMachineSettings={() => { setActionsModal(false); setMachineSettingsVisible(true); }}
+      />
+
+      <MachineSettingsModal
+        isVisible={machineSettingsVisible}
+        exerciseName={exercise.name}
+        onClose={() => setMachineSettingsVisible(false)}
+      />
+    </Animated.View>
   );
 });
 
-const cardStyles = StyleSheet.create({
-  card:          { backgroundColor: '#121212', marginHorizontal: 16, marginBottom: 16, borderRadius: 20, padding: 16, borderWidth: 0.5, borderColor: '#2C2C2E' },
-  header:        { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10, gap: 12 },
-  thumbnail:     { width: 40, height: 40, borderRadius: 8, backgroundColor: '#2C2C2E' },
-  name:          { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
-  muscles:       { fontSize: 12, color: '#8E8E93', marginTop: 3 },
-  nextKg:        { fontSize: 11, color: '#636366', marginTop: 4 },
-  infoBtn:       { width: 32, height: 32, borderRadius: 10, backgroundColor: '#2C2C2E', justifyContent: 'center', alignItems: 'center' },
-  restChip:      { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', backgroundColor: '#2C2C2E', borderRadius: 10, paddingHorizontal: 11, paddingVertical: 6, marginBottom: 12 },
-  restChipText:  { fontSize: 12, color: '#8E8E93', fontWeight: '500' },
+const makeCardStyles = (c) => StyleSheet.create({
+  card:           { backgroundColor: c.backgroundSecondary, marginHorizontal: 16, marginBottom: 16, borderRadius: 20, padding: 16, borderWidth: 0.5, borderColor: c.border },
+  supersetBadge:  { alignSelf: 'flex-start', borderRadius: 8, borderWidth: 0.5, paddingHorizontal: 8, paddingVertical: 3, marginBottom: 8 },
+  supersetBadgeText: { fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
+  header:        { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10, gap: 10 },
+  thumbnail:     { width: 40, height: 40, borderRadius: 8, backgroundColor: c.border },
+  name:          { fontSize: 16, fontWeight: '700', color: c.textPrimary },
+  muscles:       { fontSize: 12, color: c.textSecondary, marginTop: 3 },
+  nextKg:        { fontSize: 11, color: c.textTertiary, marginTop: 4 },
+  infoBtn:       { width: 32, height: 32, borderRadius: 10, backgroundColor: c.border, justifyContent: 'center', alignItems: 'center' },
+  moreBtn:       { width: 32, height: 32, borderRadius: 10, backgroundColor: c.card, justifyContent: 'center', alignItems: 'center' },
+  restChip:      { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', backgroundColor: c.border, borderRadius: 10, paddingHorizontal: 11, paddingVertical: 6, marginBottom: 12 },
+  restChipText:  { fontSize: 12, color: c.textSecondary, fontWeight: '500' },
   colHeaders:    { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 6 },
-  colH:          { fontSize: 10, color: '#636366', fontWeight: '500', letterSpacing: 0.3 },
-  divider:       { height: 0.5, backgroundColor: '#2C2C2E', marginVertical: 12 },
+  colH:          { fontSize: 10, color: c.textTertiary, fontWeight: '500', letterSpacing: 0.3 },
+  divider:       { height: 0.5, backgroundColor: c.border, marginVertical: 12 },
   actions:       { flexDirection: 'row', gap: 8, alignItems: 'center' },
   actionBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 12, paddingVertical: 10, borderWidth: 1 },
-  actionAdd:     { backgroundColor: 'rgba(0,230,118,0.08)', borderColor: 'rgba(0,230,118,0.2)' },
-  actionAddText: { fontSize: 13, fontWeight: '500', color: '#00E676' },
-  actionSwap:    { backgroundColor: '#0A0A0A', borderColor: '#2C2C2E' },
-  actionSwapText:{ fontSize: 13, fontWeight: '500', color: '#8E8E93' },
-  deleteExBtn:   { width: 38, height: 38, borderRadius: 10, backgroundColor: 'rgba(255,82,82,0.1)', justifyContent: 'center', alignItems: 'center', borderWidth: 0.5, borderColor: 'rgba(255,82,82,0.3)' },
+  actionAdd:     { backgroundColor: c.accentSoft, borderColor: c.accentSoft },
+  actionAddText: { fontSize: 13, fontWeight: '500', color: c.accent },
+  actionSwap:    { backgroundColor: c.backgroundSecondary, borderColor: c.border },
+  actionSwapText:{ fontSize: 13, fontWeight: '500', color: c.textSecondary },
+  deleteExBtn:   { width: 38, height: 38, borderRadius: 10, backgroundColor: c.dangerSoft, justifyContent: 'center', alignItems: 'center', borderWidth: 0.5, borderColor: c.dangerSoft },
 });
 
 export default function ActiveWorkoutScreen({ navigation, route }) {
   const { activeWorkout, minimizeWorkout, saveWorkoutToHistory, clearActiveWorkout } = useWorkoutContext();
+  const { colors } = useTheme();
 
   const workoutName     = route?.params?.templateName ?? activeWorkout?.workoutName ?? 'Mój trening';
   const templateId      = route?.params?.templateId;
@@ -584,6 +983,11 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   const initialTimerSec = activeWorkout?.timerSec ?? 0;
 
   const [exercises, setExercises]           = useState(initialExercises);
+  // Oryginalna kolejność ID — używana przy przywracaniu po rozłączeniu super-serii
+  const originalOrderRef = useRef(initialExercises.map((ex) => ex.id));
+  // supersetGroups: { exId: groupId }
+  const [supersetGroups, setSupersetGroups]           = useState({});
+  const [supersetPickerExIdx, setSupersetPickerExIdx] = useState(null);
   const [restActive, setRestActive]         = useState(false);
   const [restDuration, setRestDuration]     = useState(120);
   const [restLabel, setRestLabel]           = useState('');
@@ -591,15 +995,15 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   const [infoVisible, setInfoVisible]       = useState(false);
   const [infoExercise, setInfoExercise]     = useState(null);
   const [summaryVisible, setSummaryVisible] = useState(false);
-
-  const timerHudRef = useRef(null);
-  const [muscleModalVisible, setMuscleModalVisible] = useState(false);
+  const [muscleModalVisible, setMuscleModalVisible]       = useState(false);
   const [isPlateCalcVisible, setIsPlateCalcVisible]       = useState(false);
   const [selectedWeightForCalc, setSelectedWeightForCalc] = useState(0);
+  const [customExModalVisible, setCustomExModalVisible]   = useState(false);
+  const [sessionNote, setSessionNote]                     = useState('');
 
-  // FIX #2: InteractionManager – lista ćwiczeń renderowana dopiero po zakończeniu
-  // animacji wsuwania ekranu, eliminuje freeze ~2s przy maksymalizacji.
+  // ZADANIE 1: InteractionManager – lista renderowana po zakończeniu animacji wejścia
   const [isReady, setIsReady] = useState(false);
+  const timerHudRef           = useRef(null);
 
   useEffect(() => {
     clearActiveWorkout?.();
@@ -615,7 +1019,7 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
     return () => sub.remove();
   }, [exercises]);
 
-  const heatmap = useMemo(() => buildMuscleHeatmap(exercises), [exercises]);
+  const heatmap = useMuscleHeatmap(exercises);
   const totalTonnage = useMemo(() =>
     exercises.reduce((acc, ex) =>
       acc + ex.sets.reduce((s, set) =>
@@ -632,9 +1036,7 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
     setRestActive(true);
   }, []);
 
-  const hideRestBanner = useCallback(() => {
-    setRestActive(false);
-  }, []);
+  const hideRestBanner = useCallback(() => setRestActive(false), []);
 
   const confirmFirstPendingSet = useCallback(() => {
     setExercises((prev) => {
@@ -676,6 +1078,7 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
     });
   }, [showRestBanner]);
 
+  // ZADANIE 2: onDeleteSet teraz wywołuje Alert – stąd ExerciseCard wywołuje confirmDeleteSet wewnętrznie
   const handleDeleteSet = useCallback((exIdx, setId) => {
     setExercises((prev) => prev.map((ex, i) => {
       if (i !== exIdx || ex.sets.length <= 1) return ex;
@@ -700,22 +1103,29 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   }, []);
 
   const handleDeleteExercise = useCallback((exIdx) => {
-    setExercises((prev) => prev.filter((_, i) => i !== exIdx));
+    setExercises((prev) => {
+      const exId = prev[exIdx]?.id;
+      if (exId) originalOrderRef.current = originalOrderRef.current.filter((id) => id !== exId);
+      return prev.filter((_, i) => i !== exIdx);
+    });
   }, []);
 
-  const handleSwapExercise = useCallback((exIdx, newEx) => {
+  const handleSwapExercise = useCallback((exIdx, newEx, adjustedSets) => {
     setExercises((prev) => prev.map((ex, i) => {
       if (i !== exIdx) return ex;
       return {
         ...ex,
-        id: `swapped_${newEx.id}_${Date.now()}`,
-        name: newEx.name,
+        id:          `swapped_${newEx.id}_${Date.now()}`,
+        name:        newEx.name,
         muscleGroup: (newEx.muscles ?? []).join(' · '),
         description: newEx.description ?? '',
-        muscles: newEx.muscles ?? [],
-        alternatives: newEx.alternatives ?? [],
-        image: newEx.image ?? null,
+        muscles:     newEx.muscles ?? [],
+        alternatives:newEx.alternatives ?? [],
+        image:       newEx.image ?? null,
         nextTrainingKg: null,
+        // Jeśli SwapExerciseModal przekazał przeliczone serie — stosujemy je;
+        // w przeciwnym razie zostawiamy oryginalne
+        sets: adjustedSets ?? ex.sets,
       };
     }));
   }, []);
@@ -732,70 +1142,141 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
         nextTrainingKg: nextTrainingKg != null ? nextTrainingKg : ex.nextTrainingKg,
         sets: ex.sets.map((s, si) => {
           if (si !== setIdx + 1) return s;
-          return {
-            ...s,
-            suggested:   newReps ? `${newKg} kg x ${newReps}` : `${newKg} kg`,
-            aiSuggested: true,
-          };
+          return { ...s, suggested: newReps ? `${newKg} kg x ${newReps}` : `${newKg} kg`, aiSuggested: true };
         }),
       };
     }));
   }, []);
 
-  // Zaokrąglenie do najbliższych 2.5 kg
-  const roundTo2_5 = (kg) => Math.round(kg / 2.5) * 2.5;
+  const roundTo2_5 = useCallback((kg) => Math.round(kg / 2.5) * 2.5, []);
 
+  // Otwiera picker z listą ćwiczeń
+  const handleToggleSuperset = useCallback((exIdx) => {
+    setSupersetPickerExIdx(exIdx);
+  }, []);
+
+  // Połącz lub rozłącz dwa ćwiczenia w super-serię + reorder listy
+  const handleSupersetConnect = useCallback((fromExIdx, toExId, alreadyConnected) => {
+    const fromEx = exercises[fromExIdx];
+    if (!fromEx) return;
+
+    if (alreadyConnected) {
+      // ── ROZŁĄCZ ─────────────────────────────────────────────────────────────
+      setSupersetGroups((prev) => {
+        const updated = { ...prev };
+        delete updated[toExId];
+        const groupId = updated[fromEx.id];
+        const stillHasPartner = exercises.some(
+          (ex) => ex.id !== fromEx.id && ex.id !== toExId && updated[ex.id] === groupId
+        );
+        if (!stillHasPartner) delete updated[fromEx.id];
+        return updated;
+      });
+
+      // Przywróć toExId na jego oryginalne miejsce
+      setExercises((prev) => {
+        const origOrder = originalOrderRef.current;
+        const toEx = prev.find((ex) => ex.id === toExId);
+        if (!toEx) return prev;
+        const without = prev.filter((ex) => ex.id !== toExId);
+        const origIdx = origOrder.indexOf(toExId);
+        // Wstaw przed pierwszym ćwiczeniem, które w oryginale stało PO toExId
+        let insertAt = without.length;
+        for (let i = 0; i < without.length; i++) {
+          if (origOrder.indexOf(without[i].id) > origIdx) {
+            insertAt = i;
+            break;
+          }
+        }
+        const result = [...without];
+        result.splice(insertAt, 0, toEx);
+        return result;
+      });
+      return;
+    }
+
+    // ── POŁĄCZ ──────────────────────────────────────────────────────────────
+    // 1. Aktualizuj grupy
+    let resolvedGroupId;
+    setSupersetGroups((prev) => {
+      const updated    = { ...prev };
+      resolvedGroupId  = updated[fromEx.id] ?? `ss_${fromEx.id}_${Date.now()}`;
+      updated[fromEx.id] = resolvedGroupId;
+      updated[toExId]    = resolvedGroupId;
+      return updated;
+    });
+
+    // 2. Przesuń toEx tuż za ostatnim ćwiczeniem grupy fromEx
+    setExercises((prev) => {
+      const toEx = prev.find((ex) => ex.id === toExId);
+      if (!toEx) return prev;
+      const without = prev.filter((ex) => ex.id !== toExId);
+
+      // Znajdź ostatnie ćwiczenie z tej samej grupy (przed usunięciem toEx)
+      const currentGroupId = supersetGroups[fromEx.id]; // może być undefined (nowa grupa)
+      let insertAfterIdx = without.findIndex((ex) => ex.id === fromEx.id);
+      if (insertAfterIdx === -1) return prev;
+
+      // Przesuń insertAfterIdx na koniec bieżącej grupy
+      for (let i = insertAfterIdx + 1; i < without.length; i++) {
+        const gid = supersetGroups[without[i].id];
+        if (currentGroupId && gid === currentGroupId) {
+          insertAfterIdx = i;
+        } else {
+          break;
+        }
+      }
+
+      const result = [...without];
+      result.splice(insertAfterIdx + 1, 0, toEx);
+      return result;
+    });
+  }, [exercises, supersetGroups]);
+
+  // ZADANIE 4: blokada przy ≥3 drop-setach
   const handleDropSetCreate = useCallback((exIdx, setIdx) => {
     setExercises((prev) => prev.map((ex, i) => {
       if (i !== exIdx) return ex;
+      const currentDropCount = ex.sets.filter((s) => s.isDropSet).length;
+      if (currentDropCount >= 3) return ex;
       const sourceSet = ex.sets[setIdx];
       const baseKg    = parseFloat(sourceSet?.kg) || 0;
       if (baseKg === 0) return ex;
 
       const drop1Kg = roundTo2_5(baseKg * 0.8);
       const drop2Kg = roundTo2_5(drop1Kg * 0.8);
+      const ts      = Date.now();
 
-      const newSets = [
-        {
-          id:          `drop_${Date.now()}_1`,
-          prevLog:     sourceSet.prevLog ?? '—',
-          kg:          String(drop1Kg),
-          reps:        sourceSet.reps ?? '',
-          rpe:         '',
-          done:        false,
-          suggested:   null,
-          aiSuggested: false,
-          isDropSet:   true,
-        },
-        {
-          id:          `drop_${Date.now()}_2`,
-          prevLog:     sourceSet.prevLog ?? '—',
-          kg:          String(drop2Kg),
-          reps:        sourceSet.reps ?? '',
-          rpe:         '',
-          done:        false,
-          suggested:   null,
-          aiSuggested: false,
-          isDropSet:   true,
-        },
+      const dropSets = [
+        { id: `drop_${ts}_1`, prevLog: sourceSet.prevLog ?? '—', kg: String(drop1Kg), reps: sourceSet.reps ?? '', rpe: '', done: false, suggested: null, aiSuggested: false, isDropSet: true },
+        { id: `drop_${ts}_2`, prevLog: sourceSet.prevLog ?? '—', kg: String(drop2Kg), reps: sourceSet.reps ?? '', rpe: '', done: false, suggested: null, aiSuggested: false, isDropSet: true },
       ];
 
-      const updatedSets = [
-        ...ex.sets.slice(0, setIdx + 1),
-        ...newSets,
-        ...ex.sets.slice(setIdx + 1),
-      ];
+      const setsBelow = ex.sets.slice(setIdx + 1);
+      // Serie poniżej bez wypełnionych danych — usuwamy, bo drop-set je zastępuje
+      const keptBelow = setsBelow.filter(
+        (s) => (s.kg && s.kg.trim() !== '') || (s.reps && s.reps.trim() !== '') || s.done
+      );
 
-      return { ...ex, sets: updatedSets };
+      return {
+        ...ex,
+        sets: [...ex.sets.slice(0, setIdx + 1), ...dropSets, ...keptBelow],
+      };
     }));
-  }, []);
+  }, [roundTo2_5]);
 
+  // ZADANIE 5: otwieranie PlateCalculatorModal z poziomu wiersza (long-press na kg)
   const handleWeightPress = useCallback((weight) => {
     const parsed = parseFloat(weight);
     if (!isNaN(parsed) && parsed > 0) {
       setSelectedWeightForCalc(parsed);
       setIsPlateCalcVisible(true);
     }
+  }, []);
+
+  const handleAddCustomExercise = useCallback((exercise) => {
+    originalOrderRef.current = [...originalOrderRef.current, exercise.id];
+    setExercises((prev) => [...prev, exercise]);
   }, []);
 
   const segmentFill = (ex) => {
@@ -815,17 +1296,30 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
     setSummaryVisible(true);
   };
 
+  const styles = makeStyles(colors);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
         <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
 
+          {/* Segmentowy pasek postępu — kolor zmienia się gdy ćwiczenie ukończone */}
           <View style={styles.segmentBar}>
-            {exercises.map((ex) => {
-              const fill = segmentFill(ex);
+            {exercises.map((ex, idx) => {
+              const done  = ex.sets.filter((s) => s.done).length;
+              const total = ex.sets.length;
+              const fill  = total === 0 ? 0 : done / total;
+              const complete = fill >= 1;
+              const started  = fill > 0;
               return (
                 <View key={ex.id} style={styles.segment}>
-                  {fill > 0 && <View style={[styles.segmentFill,  { flex: fill }]} />}
+                  {fill > 0 && (
+                    <View style={[
+                      styles.segmentFill,
+                      { flex: fill },
+                      complete && styles.segmentFillDone,
+                      !complete && started && styles.segmentFillActive,
+                    ]} />
+                  )}
                   {fill < 1 && <View style={[styles.segmentEmpty, { flex: 1 - fill }]} />}
                 </View>
               );
@@ -838,7 +1332,7 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
               <Text style={styles.workoutSub}>{exercises.length} ćwiczeń · {doneSets} serii</Text>
             </View>
             <TouchableOpacity style={styles.minimizeBtn} onPress={handleMinimize} activeOpacity={0.7}>
-              <Ionicons name="chevron-down" size={20} color="#8E8E93" />
+              <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.endButton} onPress={handleFinish} activeOpacity={0.8}>
               <Text style={styles.endButtonText}>Zakończ</Text>
@@ -853,11 +1347,14 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
             onMuscleMapPress={() => setMuscleModalVisible(true)}
           />
 
-          {/* FIX #2: skeleton placeholder do czasu zakończenia animacji wejścia */}
+          {/* ZADANIE 1: ScrollView z optymalizacjami wydajności + skeleton */}
           <ScrollView
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
             showsVerticalScrollIndicator={false}
+            removeClippedSubviews
+            windowSize={10}
           >
             {!isReady && (
               <View style={styles.skeletonWrapper}>
@@ -867,36 +1364,74 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
               </View>
             )}
 
-            {isReady && exercises.map((ex, exIdx) => (
-              <ExerciseCard
-                key={ex.id}
-                exercise={ex}
-                exIndex={exIdx}
-                onUpdateSet={handleUpdateSet}
-                onToggleSet={handleToggleSet}
-                onDeleteSet={handleDeleteSet}
-                onAddSet={handleAddSet}
-                onRestChange={handleRestChange}
-                onInfoPress={() => { setInfoExercise(ex); setInfoVisible(true); }}
-                onCascadeUpdate={handleCascadeUpdate}
-                onDeleteExercise={() => handleDeleteExercise(exIdx)}
-                onSwapExercise={handleSwapExercise}
-                onDropSetPress={handleDropSetCreate}
-                onWeightPress={handleWeightPress}
-              />
-            ))}
+            {isReady && exercises.map((ex, exIdx) => {
+              const group      = supersetGroups[ex.id] ?? null;
+              const nextGroup  = exercises[exIdx + 1] ? supersetGroups[exercises[exIdx + 1].id] : null;
+              const showConnector = group && nextGroup && group === nextGroup;
+              return (
+                <View key={ex.id}>
+                  <ExerciseCard
+                    exercise={ex}
+                    exIndex={exIdx}
+                    onUpdateSet={handleUpdateSet}
+                    onToggleSet={handleToggleSet}
+                    onDeleteSet={handleDeleteSet}
+                    onAddSet={handleAddSet}
+                    onRestChange={handleRestChange}
+                    onInfoPress={() => { setInfoExercise(ex); setInfoVisible(true); }}
+                    onCascadeUpdate={handleCascadeUpdate}
+                    onDeleteExercise={() => handleDeleteExercise(exIdx)}
+                    onSwapExercise={handleSwapExercise}
+                    onDropSetPress={handleDropSetCreate}
+                    supersetGroup={group}
+                    onToggleSuperset={handleToggleSuperset}
+                  />
+                  {showConnector && (
+                    <SupersetConnector
+                      colors={colors}
+                      groupColor={supersetColor(group)}
+                    />
+                  )}
+                </View>
+              );
+            })}
 
             {isReady && exercises.length === 0 && (
               <View style={styles.emptyPlan}>
-                <Ionicons name="barbell-outline" size={40} color="#3A3A3C" />
-                <Text style={styles.emptyPlanText}>Brak ćwiczeń w tym treningu.</Text>
+              <Ionicons name="barbell-outline" size={40} color={colors.borderMuted} />
+              <Text style={styles.emptyPlanText}>Brak ćwiczeń w tym treningu.</Text>
               </View>
             )}
 
-            {isReady && (
+            {isReady && exercises.length > 0 && (
               <View style={styles.endOfWorkout}>
-                <Ionicons name="flag-outline" size={24} color="#3A3A3C" />
+                <Ionicons name="flag-outline" size={24} color={colors.borderMuted} />
                 <Text style={styles.endOfWorkoutText}>Koniec planu treningowego</Text>
+
+                {/* Notatka do treningu — dyskretny kafelek, zero związku z AI */}
+                <View style={styles.noteCard}>
+                  <Text style={styles.noteCardLabel}>📝 Notatka do sesji</Text>
+                  <TextInput
+                    style={styles.noteCardInput}
+                    value={sessionNote}
+                    onChangeText={setSessionNote}
+                    placeholder="Jak poszło? Samopoczucie, PR, uwagi..."
+                    placeholderTextColor={colors.borderMuted}
+                    multiline
+                    numberOfLines={3}
+                    maxLength={300}
+                    textAlignVertical="top"
+                  />
+                </View>
+
+                <TouchableOpacity
+                  style={styles.addCustomExBtn}
+                  onPress={() => setCustomExModalVisible(true)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="add-circle-outline" size={18} color={colors.library} />
+                  <Text style={styles.addCustomExText}>Dodaj własne ćwiczenie</Text>
+                </TouchableOpacity>
                 <TouchableOpacity style={styles.finishBtn} onPress={handleFinish} activeOpacity={0.85}>
                   <Text style={styles.finishBtnText}>Zakończ i podsumuj</Text>
                 </TouchableOpacity>
@@ -913,16 +1448,26 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
             />
           )}
 
+          <SupersetPickerModal
+            visible={supersetPickerExIdx !== null}
+            exercises={exercises}
+            fromExIdx={supersetPickerExIdx ?? 0}
+            supersetGroups={supersetGroups}
+            onConnect={handleSupersetConnect}
+            onClose={() => setSupersetPickerExIdx(null)}
+            colors={colors}
+          />
           <ExerciseInfoModal visible={infoVisible} exercise={infoExercise} onClose={() => setInfoVisible(false)} />
           <MuscleDistributionModal
             isVisible={muscleModalVisible}
             heatmap={heatmap}
             onClose={() => setMuscleModalVisible(false)}
           />
-          <PlateCalculatorModal
-            isVisible={isPlateCalcVisible}
-            targetWeight={selectedWeightForCalc}
-            onClose={() => setIsPlateCalcVisible(false)}
+          {/* PlateCalculatorModal zastąpiony przez WeightInputModal w SwipeableSetRow */}
+          <AddCustomExerciseModal
+            isVisible={customExModalVisible}
+            onAdd={handleAddCustomExercise}
+            onClose={() => setCustomExModalVisible(false)}
           />
           <WorkoutSummaryModal
             isVisible={summaryVisible}
@@ -931,58 +1476,66 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
               totalSec:     timerHudRef.current?.getSeconds() ?? 0,
               totalTonnage: totalTonnage,
               exercises:    exercises,
+              sessionNote:  sessionNote,
+              workoutName:  workoutName,
             }}
             onSave={() => {
               const finalSec = timerHudRef.current?.getSeconds() ?? 0;
-              saveWorkoutToHistory({ workoutName, exercises, timerSec: finalSec, tonnage: totalTonnage });
+              saveWorkoutToHistory({ workoutName, exercises, timerSec: finalSec, tonnage: totalTonnage, note: sessionNote });
               setSummaryVisible(false);
               navigation?.goBack();
             }}
           />
         </KeyboardAvoidingView>
-      </TouchableWithoutFeedback>
     </GestureHandlerRootView>
   );
 }
 
-const styles = StyleSheet.create({
-  screen:        { flex: 1, backgroundColor: '#000000' },
+const makeStyles = (c) => StyleSheet.create({
+  screen:        { flex: 1, backgroundColor: c.background },
   scrollContent: { paddingBottom: 240 },
 
-  segmentBar:   { flexDirection: 'row', gap: 4, paddingHorizontal: 16, paddingTop: 54, paddingBottom: 8 },
-  segment:      { flex: 1, height: 3, borderRadius: 2, overflow: 'hidden', flexDirection: 'row' },
-  segmentFill:  { backgroundColor: '#00E676' },
-  segmentEmpty: { backgroundColor: '#2C2C2E' },
+  segmentBar:        { flexDirection: 'row', gap: 4, paddingHorizontal: 16, paddingTop: 54, paddingBottom: 8 },
+  segment:           { flex: 1, height: 4, borderRadius: 2, overflow: 'hidden', flexDirection: 'row' },
+  segmentFill:       { backgroundColor: c.accent },
+  segmentFillActive: { backgroundColor: c.accent },
+  segmentFillDone:   { backgroundColor: c.accent },
+  segmentEmpty:      { backgroundColor: c.border },
 
   topBar:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 6, gap: 8 },
-  workoutTitle:  { fontSize: 17, fontWeight: '700', color: '#FFFFFF' },
-  workoutSub:    { fontSize: 10, color: '#8E8E93', marginTop: 2 },
-  minimizeBtn:   { width: 34, height: 34, borderRadius: 10, backgroundColor: '#1C1C1E', justifyContent: 'center', alignItems: 'center' },
-  endButton:     { backgroundColor: 'rgba(255,69,58,0.15)', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7 },
-  endButtonText: { fontSize: 13, fontWeight: '600', color: '#FF453A' },
+  workoutTitle:  { fontSize: 17, fontWeight: '700', color: c.textPrimary },
+  workoutSub:    { fontSize: 10, color: c.textSecondary, marginTop: 2 },
+  minimizeBtn:   { width: 34, height: 34, borderRadius: 10, backgroundColor: c.card, justifyContent: 'center', alignItems: 'center' },
+  endButton:     { backgroundColor: c.dangerSoft, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7 },
+  endButtonText: { fontSize: 13, fontWeight: '600', color: c.danger },
 
   emptyPlan:     { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 32, gap: 12 },
-  emptyPlanText: { fontSize: 14, color: '#636366', textAlign: 'center' },
+  emptyPlanText: { fontSize: 14, color: c.textTertiary, textAlign: 'center' },
 
   endOfWorkout:     { alignItems: 'center', padding: 32, gap: 12 },
-  endOfWorkoutText: { fontSize: 14, color: '#3A3A3C' },
-  finishBtn:        { backgroundColor: '#1C1C1E', borderRadius: 16, paddingHorizontal: 28, paddingVertical: 14, borderWidth: 0.5, borderColor: '#2C2C2E', marginTop: 4 },
-  finishBtnText:    { fontSize: 15, fontWeight: '600', color: '#8E8E93' },
+  endOfWorkoutText: { fontSize: 14, color: c.borderMuted },
+  addCustomExBtn:   { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: c.librarySoft, borderRadius: 14, paddingHorizontal: 20, paddingVertical: 12, borderWidth: 0.5, borderColor: c.librarySoft },
+  addCustomExText:  { fontSize: 14, fontWeight: '600', color: c.library },
+  finishBtn:        { backgroundColor: c.card, borderRadius: 16, paddingHorizontal: 28, paddingVertical: 14, borderWidth: 0.5, borderColor: c.border, marginTop: 4 },
+  finishBtnText:    { fontSize: 15, fontWeight: '600', color: c.textSecondary },
 
-  // FIX #2: skeleton cards – widoczne przez ~100-300ms zamiast frozen UI
+  noteCard:       { width: '100%', backgroundColor: c.backgroundSecondary, borderRadius: 16, padding: 14, borderWidth: 0.5, borderColor: c.border, gap: 8 },
+  noteCardLabel:  { fontSize: 12, color: c.textTertiary, fontWeight: '500' },
+  noteCardInput:  { color: c.textPrimary, fontSize: 14, lineHeight: 20, minHeight: 56 },
+
   skeletonWrapper: { paddingTop: 8 },
-  skeletonCard:    { height: 140, backgroundColor: '#121212', marginHorizontal: 16, marginBottom: 16, borderRadius: 20, borderWidth: 0.5, borderColor: '#2C2C2E', opacity: 0.6 },
+  skeletonCard:    { height: 140, backgroundColor: c.backgroundSecondary, marginHorizontal: 16, marginBottom: 16, borderRadius: 20, borderWidth: 0.5, borderColor: c.border, opacity: 0.6 },
 
-  restBanner:    { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(10,10,10,0.97)', borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20, borderTopWidth: 0.5, borderColor: '#2C2C2E' },
-  restTop:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  restLabel:     { fontSize: 13, color: '#8E8E93', fontWeight: '500', flex: 1, marginRight: 10 },
-  restDonePill:  { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,230,118,0.12)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
-  restDoneText:  { fontSize: 12, color: '#00E676', fontWeight: '600' },
-  restTrack:     { height: 3, backgroundColor: '#2C2C2E', borderRadius: 3, overflow: 'hidden', marginBottom: 12 },
-  restFill:      { height: '100%', backgroundColor: '#00E676', borderRadius: 3 },
-  restTimerValue:{ fontSize: 46, fontWeight: '700', color: '#FFFFFF', textAlign: 'center', letterSpacing: 4, fontVariant: ['tabular-nums'], marginBottom: 16 },
-  restBtns:      { flexDirection: 'row', gap: 8 },
-  restBtn:       { flex: 1, backgroundColor: '#1C1C1E', borderRadius: 12, paddingVertical: 13, alignItems: 'center', borderWidth: 0.5, borderColor: '#2C2C2E' },
-  restBtnSkip:   { backgroundColor: 'rgba(0,230,118,0.1)', borderColor: 'rgba(0,230,118,0.25)' },
-  restBtnText:   { fontSize: 14, fontWeight: '600', color: '#FFFFFF' },
+  restBanner:     { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: c.backgroundSecondary, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20, borderTopWidth: 0.5, borderColor: c.border },
+  restTop:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  restLabel:      { fontSize: 13, color: c.textSecondary, fontWeight: '500', flex: 1, marginRight: 10 },
+  restDonePill:   { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: c.accentSoft, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  restDoneText:   { fontSize: 12, color: c.accent, fontWeight: '600' },
+  restTrack:      { height: 3, backgroundColor: c.border, borderRadius: 3, overflow: 'hidden', marginBottom: 12 },
+  restFill:       { height: '100%', backgroundColor: c.accent, borderRadius: 3 },
+  restTimerValue: { fontSize: 46, fontWeight: '700', color: c.textPrimary, textAlign: 'center', letterSpacing: 4, fontVariant: ['tabular-nums'], marginBottom: 16 },
+  restBtns:       { flexDirection: 'row', gap: 8 },
+  restBtn:        { flex: 1, backgroundColor: c.card, borderRadius: 12, paddingVertical: 13, alignItems: 'center', borderWidth: 0.5, borderColor: c.border },
+  restBtnSkip:    { backgroundColor: c.accentSoft, borderColor: c.accentSoft },
+  restBtnText:    { fontSize: 14, fontWeight: '600', color: c.textPrimary },
 });

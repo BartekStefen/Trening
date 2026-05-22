@@ -1,26 +1,24 @@
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
+import { useTheme } from '../context/ThemeContext';
 
 // ─── Stałe konfiguracyjne ────────────────────────────────────────────────────
 
 const DAILY_GOAL_KCAL = 3000;
 const EATEN_KCAL      = 1500;
 
-// Widełki makroskładników zamiast jednej wartości docelowej –
-// bardziej realistyczne podejście do diety (tolerancja ±10–15g)
+// Kolory makroskładników są semantyczne (zielony=białko, pomarańczowy=tłuszcz,
+// niebieski=węgle) — niezależne od motywu aplikacji.
 const MACRO_RANGES = {
   protein: { min: 150, max: 170, eaten: 120, color: '#00E676' },
   fat:     { min:  45, max:  55, eaten:  40, color: '#EF9F27' },
   carbs:   { min: 200, max: 230, eaten: 130, color: '#378ADD' },
 };
 
-// Każda porcja wody = 250 ml (standardowa szklanka).
-// WATER_PORTIONS to łączna liczba "butelek" widocznych na ekranie.
-// Cel 2500 ml = 10 porcji po 250 ml – stąd 10 kafelków
 const PORTION_ML     = 250;
 const WATER_GOAL_ML  = 2500;
-const WATER_PORTIONS = WATER_GOAL_ML / PORTION_ML; // = 10
+const WATER_PORTIONS = WATER_GOAL_ML / PORTION_ML;
 
 const MEALS = [
   { id: '1', name: 'Śniadanie',        emoji: '🌅', iconBg: 'rgba(255, 179,  71, 0.15)' },
@@ -50,9 +48,7 @@ const generateWeekDays = () => {
 };
 
 // ─── Komponent: pasek jednego makroskładnika ─────────────────────────────────
-// Przyjmuje widełki (min/max) zamiast jednej wartości – pasek wypełnia się
-// proporcjonalnie do środka przedziału, żeby odzwierciedlić "cel optymalny"
-const MacroBar = ({ label, eaten, min, max, color }) => {
+const MacroBar = ({ label, eaten, min, max, color, trackColor }) => {
   const target  = (min + max) / 2;
   const percent = Math.min((eaten / target) * 100, 100);
 
@@ -60,10 +56,9 @@ const MacroBar = ({ label, eaten, min, max, color }) => {
     <View style={macroStyles.wrapper}>
       <View style={macroStyles.headerRow}>
         <Text style={macroStyles.label}>{label}</Text>
-        {/* Widełki jako "X–Yg" – użytkownik widzi dopuszczalny przedział, nie sztywną granicę */}
         <Text style={[macroStyles.range, { color }]}>{min}–{max}g</Text>
       </View>
-      <View style={macroStyles.track}>
+      <View style={[macroStyles.track, { backgroundColor: trackColor }]}>
         <View style={[macroStyles.fill, { width: `${percent}%`, backgroundColor: color }]} />
       </View>
     </View>
@@ -71,24 +66,24 @@ const MacroBar = ({ label, eaten, min, max, color }) => {
 };
 
 const macroStyles = StyleSheet.create({
-  wrapper:    { flex: 1 },
-  headerRow:  { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 },
-  label:      { fontSize: 11, color: '#8E8E93' },
-  range:      { fontSize: 11, fontWeight: '600' },
-  track:      { height: 5, backgroundColor: '#2C2C2E', borderRadius: 5, overflow: 'hidden' },
-  fill:       { height: '100%', borderRadius: 5 },
+  wrapper:   { flex: 1 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 },
+  label:     { fontSize: 11, color: '#8E8E93' },
+  range:     { fontSize: 11, fontWeight: '600' },
+  track:     { height: 5, borderRadius: 5, overflow: 'hidden' },
+  fill:      { height: '100%', borderRadius: 5 },
 });
 
 // ─── Komponent: pojedyncza "butelka" wody ────────────────────────────────────
-// Każda butelka = 250 ml. Wypełnienie (niebieskie tło) vs pustka (ciemnoszare)
-// daje natychmiastowy, wizualny feedback bez czytania liczb
-const WaterBottle = ({ filled }) => (
+const WaterBottle = ({ filled, waterColor }) => (
   <View style={bottleStyles.wrapper}>
-    <View style={[bottleStyles.shape, filled ? bottleStyles.shapeFull : bottleStyles.shapeEmpty]}>
-      {/* Wypełnienie od dołu – height: '80%' zostawia widoczną "przestrzeń powietrza" */}
+    <View style={[
+      bottleStyles.shape,
+      { borderColor: filled ? waterColor : '#3A3A3C' },
+    ]}>
       <View style={[
         bottleStyles.liquid,
-        { backgroundColor: filled ? '#378ADD' : '#2C2C2E', height: filled ? '80%' : '100%' }
+        { backgroundColor: filled ? waterColor : '#2C2C2E', height: filled ? '80%' : '100%' },
       ]} />
     </View>
     <Text style={bottleStyles.label}>250</Text>
@@ -96,27 +91,21 @@ const WaterBottle = ({ filled }) => (
 );
 
 const bottleStyles = StyleSheet.create({
-  wrapper:    { alignItems: 'center', gap: 4 },
+  wrapper: { alignItems: 'center', gap: 4 },
   shape: {
-    width: 26,
-    height: 42,
-    borderRadius: 7,
-    borderWidth: 1.5,
-    overflow: 'hidden',
-    justifyContent: 'flex-end', // liquid "leży" na dnie butelki
+    width: 26, height: 42, borderRadius: 7,
+    borderWidth: 1.5, overflow: 'hidden', justifyContent: 'flex-end',
   },
-  shapeFull:  { borderColor: '#378ADD' },
-  shapeEmpty: { borderColor: '#3A3A3C' },
-  liquid:     { width: '100%', borderRadius: 4 },
-  label:      { fontSize: 9, color: '#8E8E93' },
+  liquid: { width: '100%', borderRadius: 4 },
+  label:  { fontSize: 9, color: '#8E8E93' },
 });
 
 // ─── Główny komponent ekranu ─────────────────────────────────────────────────
 export default function DietScreen() {
-  // filledPortions = liczba "zapełnionych" butelek (0–10).
-  // Każde kliknięcie +250ml zwiększa licznik o 1, co zmienia wygląd kolejnej butelki
   const [filledPortions, setFilledPortions] = useState(0);
   const [activeDayId, setActiveDayId]       = useState('0');
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
 
   const weekDays    = generateWeekDays();
   const remaining   = DAILY_GOAL_KCAL - EATEN_KCAL;
@@ -124,7 +113,6 @@ export default function DietScreen() {
   const waterMl     = filledPortions * PORTION_ML;
 
   const handleAddWater = () => {
-    // Math.min zapobiega przekroczeniu limitu WATER_PORTIONS (10 butelek)
     setFilledPortions((prev) => Math.min(prev + 1, WATER_PORTIONS));
   };
 
@@ -134,11 +122,10 @@ export default function DietScreen() {
       contentContainerStyle={styles.contentContainer}
       showsVerticalScrollIndicator={false}
     >
-      {/* ── Nagłówek ── */}
       <Text style={styles.appName}>[ NAZWA APLIKACJI ]</Text>
       <Text style={styles.screenTitle}>Dieta</Text>
 
-      {/* ── Pasek dni tygodnia ── */}
+      {/* Pasek dni tygodnia */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -162,7 +149,7 @@ export default function DietScreen() {
         ))}
       </ScrollView>
 
-      {/* ── Karta kalorii + makro w widełkach ── */}
+      {/* Karta kalorii + makro */}
       <View style={styles.kcalCard}>
         <View style={styles.kcalRow}>
           <View>
@@ -182,27 +169,25 @@ export default function DietScreen() {
         </View>
 
         <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${kcalPercent}%`, backgroundColor: '#00E676' }]} />
+          <View style={[styles.progressFill, { width: `${kcalPercent}%`, backgroundColor: colors.accent }]} />
         </View>
 
         <View style={styles.macroRow}>
-          <MacroBar label="Białko"   {...MACRO_RANGES.protein} />
-          <MacroBar label="Tłuszcze" {...MACRO_RANGES.fat}     />
-          <MacroBar label="Węgle"    {...MACRO_RANGES.carbs}   />
+          <MacroBar label="Białko"   {...MACRO_RANGES.protein} trackColor={colors.border} />
+          <MacroBar label="Tłuszcze" {...MACRO_RANGES.fat}     trackColor={colors.border} />
+          <MacroBar label="Węgle"    {...MACRO_RANGES.carbs}   trackColor={colors.border} />
         </View>
       </View>
 
-      {/* ── Moduł nawodnienia – nowa pozycja: przed listą posiłków ── */}
+      {/* Moduł nawodnienia */}
       <View style={styles.waterCard}>
-        {/* Górny rząd: ikona + tytuł + licznik ml + przycisk +250ml */}
         <View style={styles.waterTopRow}>
           <View style={styles.waterTitleGroup}>
             <View style={styles.waterIconWrapper}>
-              <Ionicons name="water" size={20} color="#378ADD" />
+              <Ionicons name="water" size={20} color={colors.water} />
             </View>
             <View>
               <Text style={styles.waterTitle}>Nawodnienie</Text>
-              {/* Wyświetlamy aktualny stan w ml, wyliczony z liczby porcji */}
               <Text style={styles.waterSub}>
                 {waterMl.toLocaleString('pl-PL')} / {WATER_GOAL_ML.toLocaleString('pl-PL')} ml
               </Text>
@@ -213,31 +198,27 @@ export default function DietScreen() {
             style={styles.waterAddButton}
             onPress={handleAddWater}
             activeOpacity={0.7}
-            // Blokujemy przycisk po osiągnięciu celu – opcjonalne, ale zapobiega
-            // przypadkowemu nadpisaniu stanu po osiągnięciu 2500 ml
             disabled={filledPortions >= WATER_PORTIONS}
           >
             <Text style={[
               styles.waterAddTop,
-              filledPortions >= WATER_PORTIONS && styles.waterAddDisabled
+              filledPortions >= WATER_PORTIONS && styles.waterAddDisabled,
             ]}>+250</Text>
             <Text style={[
               styles.waterAddSub,
-              filledPortions >= WATER_PORTIONS && styles.waterAddDisabled
+              filledPortions >= WATER_PORTIONS && styles.waterAddDisabled,
             ]}>ml</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Rząd butelek – renderujemy dokładnie WATER_PORTIONS (10) elementów.
-            Array.from z funkcją mapującą to czystszy zapis niż tworzenie tablicy indeksów */}
         <View style={styles.bottlesRow}>
           {Array.from({ length: WATER_PORTIONS }, (_, index) => (
-            <WaterBottle key={index} filled={index < filledPortions} />
+            <WaterBottle key={index} filled={index < filledPortions} waterColor={colors.water} />
           ))}
         </View>
       </View>
 
-      {/* ── Lista posiłków – bez zmian względem v2 ── */}
+      {/* Lista posiłków */}
       <Text style={styles.sectionTitle}>Posiłki</Text>
 
       {MEALS.map((meal) => (
@@ -252,7 +233,7 @@ export default function DietScreen() {
             </View>
           </View>
           <TouchableOpacity style={styles.addButton} activeOpacity={0.7}>
-            <Ionicons name="add" size={22} color="#00E676" />
+            <Ionicons name="add" size={22} color={colors.accent} />
           </TouchableOpacity>
         </TouchableOpacity>
       ))}
@@ -261,157 +242,84 @@ export default function DietScreen() {
 }
 
 // ─── Style ───────────────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
-  screen:           { flex: 1, backgroundColor: '#000000' },
+const makeStyles = (c) => StyleSheet.create({
+  screen:           { flex: 1, backgroundColor: c.background },
   contentContainer: { paddingBottom: 36 },
 
-  // --- Nagłówek ---
   appName: {
-    textAlign: 'center',
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#3A3A3C',
-    letterSpacing: 2,
-    paddingTop: 56,
-    paddingBottom: 8,
+    textAlign: 'center', fontSize: 13, fontWeight: '500',
+    color: c.borderMuted, letterSpacing: 2,
+    paddingTop: 56, paddingBottom: 8,
   },
   screenTitle: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: 0.3,
-    paddingHorizontal: 20,
-    paddingBottom: 16,
+    fontSize: 32, fontWeight: '700', color: c.textPrimary,
+    letterSpacing: 0.3, paddingHorizontal: 20, paddingBottom: 16,
   },
 
-  // --- Dni tygodnia ---
-  daysScroll:     { marginBottom: 16 },
-  daysContainer:  { paddingHorizontal: 16, gap: 8 },
+  daysScroll:    { marginBottom: 16 },
+  daysContainer: { paddingHorizontal: 16, gap: 8 },
   dayChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 14,
-    backgroundColor: '#1C1C1E',
-    borderWidth: 1,
-    borderColor: '#2C2C2E',
-    alignItems: 'center',
-    minWidth: 62,
+    paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14,
+    backgroundColor: c.card, borderWidth: 1, borderColor: c.border,
+    alignItems: 'center', minWidth: 62,
   },
-  dayChipToday:   { borderColor: '#00E676', backgroundColor: 'rgba(0, 230, 118, 0.10)' },
-  dayChipActive:  { borderColor: '#00E676' },
-  dayName:        { fontSize: 11, color: '#8E8E93', marginBottom: 3 },
-  dayNameToday:   { color: '#00E676' },
-  dayNum:         { fontSize: 16, fontWeight: '600', color: '#FFFFFF' },
-  dayNumToday:    { color: '#00E676' },
+  dayChipToday:  { borderColor: c.accent, backgroundColor: c.accentSoft },
+  dayChipActive: { borderColor: c.accent },
+  dayName:       { fontSize: 11, color: c.textSecondary, marginBottom: 3 },
+  dayNameToday:  { color: c.accent },
+  dayNum:        { fontSize: 16, fontWeight: '600', color: c.textPrimary },
+  dayNumToday:   { color: c.accent },
 
-  // --- Karta kalorii ---
   kcalCard: {
-    backgroundColor: '#1C1C1E',
-    marginHorizontal: 16,
-    marginBottom: 12,
-    borderRadius: 20,
-    padding: 18,
-    borderWidth: 0.5,
-    borderColor: '#2C2C2E',
+    backgroundColor: c.card, marginHorizontal: 16, marginBottom: 12,
+    borderRadius: 20, padding: 18, borderWidth: 0.5, borderColor: c.border,
   },
   kcalRow:    { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
   kcalCenter: { alignItems: 'center' },
   kcalRight:  { alignItems: 'flex-end' },
-  kcalLabel:  { fontSize: 12, color: '#8E8E93', marginBottom: 4 },
-  kcalValue:  { fontSize: 24, fontWeight: '700', color: '#FFFFFF' },
-  kcalGreen:  { color: '#00E676' },
-  kcalRed:    { color: '#FF453A' },
-  kcalGoal:   { fontSize: 15, fontWeight: '500', color: '#8E8E93', marginTop: 4 },
+  kcalLabel:  { fontSize: 12, color: c.textSecondary, marginBottom: 4 },
+  kcalValue:  { fontSize: 24, fontWeight: '700', color: c.textPrimary },
+  kcalGreen:  { color: c.accent },
+  kcalRed:    { color: c.danger },
+  kcalGoal:   { fontSize: 15, fontWeight: '500', color: c.textSecondary, marginTop: 4 },
   progressTrack: {
-    height: 8,
-    backgroundColor: '#2C2C2E',
-    borderRadius: 8,
-    overflow: 'hidden',
-    marginBottom: 16,
+    height: 8, backgroundColor: c.border, borderRadius: 8,
+    overflow: 'hidden', marginBottom: 16,
   },
   progressFill: { height: '100%', borderRadius: 8 },
-  macroRow:   { flexDirection: 'row', gap: 12 },
+  macroRow:     { flexDirection: 'row', gap: 12 },
 
-  // --- Karta nawodnienia ---
   waterCard: {
-    backgroundColor: '#1C1C1E',
-    marginHorizontal: 16,
-    marginBottom: 24,
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 0.5,
-    borderColor: '#2C2C2E',
+    backgroundColor: c.card, marginHorizontal: 16, marginBottom: 24,
+    borderRadius: 20, padding: 16, borderWidth: 0.5, borderColor: c.border,
   },
-  waterTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  waterTitleGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  waterIconWrapper: {
-    width: 36,
-    height: 36,
-    borderRadius: 11,
-    backgroundColor: 'rgba(55, 138, 221, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  waterTitle: { fontSize: 15, fontWeight: '600', color: '#FFFFFF' },
-  waterSub:   { fontSize: 12, color: '#8E8E93', marginTop: 2 },
-  waterAddButton: {
-    backgroundColor: 'rgba(55, 138, 221, 0.15)',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  waterAddTop:     { fontSize: 15, fontWeight: '700', color: '#378ADD' },
-  waterAddSub:     { fontSize: 11, color: '#378ADD', opacity: 0.7 },
-  // Wizualna informacja że przycisk jest nieaktywny po osiągnięciu celu
-  waterAddDisabled:{ color: '#3A3A3C' },
+  waterTopRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  waterTitleGroup: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  waterIconWrapper:{ width: 36, height: 36, borderRadius: 11, backgroundColor: c.waterSoft, justifyContent: 'center', alignItems: 'center' },
+  waterTitle:      { fontSize: 15, fontWeight: '600', color: c.textPrimary },
+  waterSub:        { fontSize: 12, color: c.textSecondary, marginTop: 2 },
+  waterAddButton:  { backgroundColor: c.waterSoft, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center' },
+  waterAddTop:     { fontSize: 15, fontWeight: '700', color: c.water },
+  waterAddSub:     { fontSize: 11, color: c.water, opacity: 0.7 },
+  waterAddDisabled:{ color: c.borderMuted },
+  bottlesRow:      { flexDirection: 'row', justifyContent: 'space-between' },
 
-  // Butelki wypełniają cały wiersz równomiernie bez ręcznych marginesów
-  bottlesRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-
-  // --- Lista posiłków ---
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    paddingHorizontal: 20,
-    marginBottom: 12,
+    fontSize: 20, fontWeight: '600', color: c.textPrimary,
+    paddingHorizontal: 20, marginBottom: 12,
   },
   mealCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#1C1C1E',
-    marginHorizontal: 16,
-    marginBottom: 10,
-    borderRadius: 18,
-    padding: 14,
-    borderWidth: 0.5,
-    borderColor: '#2C2C2E',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: c.card, marginHorizontal: 16, marginBottom: 10,
+    borderRadius: 18, padding: 14, borderWidth: 0.5, borderColor: c.border,
   },
-  mealLeft:       { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  mealLeft:        { flexDirection: 'row', alignItems: 'center', gap: 14 },
   mealIconWrapper: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  mealEmoji:      { fontSize: 20 },
-  mealName:       { fontSize: 15, fontWeight: '500', color: '#FFFFFF' },
-  mealSub:        { fontSize: 12, color: '#8E8E93', marginTop: 3 },
+  mealEmoji:       { fontSize: 20 },
+  mealName:        { fontSize: 15, fontWeight: '500', color: c.textPrimary },
+  mealSub:         { fontSize: 12, color: c.textSecondary, marginTop: 3 },
   addButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: 'rgba(0, 230, 118, 0.12)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 34, height: 34, borderRadius: 10,
+    backgroundColor: c.accentSoft, justifyContent: 'center', alignItems: 'center',
   },
 });

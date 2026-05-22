@@ -1,263 +1,385 @@
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
+import { useWorkoutContext } from '../context/WorkoutContext';
+import { useTheme } from '../context/ThemeContext';
+import VolumeChart from '../components/profile/VolumeChart';
 
-// Nawyki trzymam jako stan lokalny - docelowo będą synchronizowane z Firebase
-// i resetowane każdego dnia przez Cloud Function
 const INITIAL_HABITS = [
-  { id: '1', name: 'Kreatyna 5g',  icon: 'fitness-outline',    done: true  },
-  { id: '2', name: 'Sen 8h',       icon: 'moon-outline',       done: false },
+  { id: '1', name: 'Kreatyna 5g', icon: 'fitness-outline',  done: true  },
+  { id: '2', name: 'Sen 8h',      icon: 'moon-outline',     done: false },
 ];
 
-export default function ProfileScreen() {
-  // useState zamiast zwykłej zmiennej - React nie wie o zmianie stanu, jeśli
-  // mutujemy tablicę bezpośrednio. useState wymusza ponowny render po odhaczeniu nawyku
-  const [habits, setHabits] = useState(INITIAL_HABITS);
+const fmtDur = (s) => {
+  if (!s) return '—';
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+};
 
-  const toggleHabit = (id) => {
-    // Tworzymy nową tablicę zamiast mutować istniejącą - zasada niemutowalności stanu w React
-    setHabits((prev) =>
-      prev.map((h) => (h.id === id ? { ...h, done: !h.done } : h))
-    );
-  };
-
+// ─── Karta podglądu motywu ────────────────────────────────────────────────────
+function ThemeCard({ theme, isActive, onSelect }) {
+  const [bg, card, accent] = theme.preview;
   return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={styles.contentContainer}
-      showsVerticalScrollIndicator={false}
+    <TouchableOpacity
+      style={[
+        themeCardStyles.wrapper,
+        { backgroundColor: card, borderColor: isActive ? accent : 'transparent' },
+      ]}
+      onPress={() => onSelect(theme.id)}
+      activeOpacity={0.8}
     >
-      <View style={styles.header}>
-        <Text style={styles.title}>Profil</Text>
+      {/* Miniaturowy podgląd kolorów */}
+      <View style={[themeCardStyles.preview, { backgroundColor: bg }]}>
+        <View style={[themeCardStyles.dot, { backgroundColor: card }]} />
+        <View style={[themeCardStyles.dot, { backgroundColor: accent }]} />
+        <View style={[themeCardStyles.bar,  { backgroundColor: accent, opacity: 0.4 }]} />
       </View>
 
-      {/* Placeholder heatmapy sylwetki - docelowo zastąpiony SVG/Canvas z kolorowanymi
-          partiami mięśniowymi na podstawie historii treningów z Firebase */}
-      <View style={styles.heatmapPlaceholder}>
-        <Ionicons name="body-outline" size={52} color="#3A3A3C" />
-        <Text style={styles.heatmapTitle}>Heatmapa sylwetki</Text>
-        <Text style={styles.heatmapSub}>
-          Po pierwszych treningach zaświeci się tu mapa{'\n'}najczęściej trenowanych partii ciała
+      <View style={themeCardStyles.info}>
+        <Text style={[themeCardStyles.name, { color: isActive ? accent : '#FFFFFF' }]}>
+          {theme.label}
         </Text>
+        <Text style={themeCardStyles.desc}>{theme.description}</Text>
       </View>
 
-      {/* ---- Sekcja: Codzienne nawyki ---- */}
-      <Text style={styles.sectionTitle}>Codzienne nawyki</Text>
-
-      {habits.map((habit) => (
-        // Cały kafelek jest przyciskiem odhaczającym nawyk, nie tylko checkbox
-        <TouchableOpacity
-          key={habit.id}
-          style={styles.habitCard}
-          onPress={() => toggleHabit(habit.id)}
-          activeOpacity={0.7}
-        >
-          {/* Checkbox - zmienia wygląd w zależności od stanu `done` */}
-          <View style={[styles.checkbox, habit.done && styles.checkboxDone]}>
-            {habit.done && (
-              <Ionicons name="checkmark" size={16} color="#000000" />
-            )}
-          </View>
-
-          <View style={styles.habitTextWrapper}>
-            <Text style={[styles.habitName, habit.done && styles.habitNameDone]}>
-              {habit.name}
-            </Text>
-            <Text style={styles.habitSub}>
-              {habit.done ? 'Dzisiaj: odhaczone ✓' : 'Dzisiaj: jeszcze nie'}
-            </Text>
-          </View>
-
-          <Ionicons
-            name={habit.icon}
-            size={22}
-            // Ikona blednie po odhaczeniu - subtelnie sygnalizuje "już zrobione"
-            color={habit.done ? '#3A3A3C' : '#8E8E93'}
-          />
-        </TouchableOpacity>
-      ))}
-
-      {/* ---- Sekcja: Ustawienia ---- */}
-      <Text style={[styles.sectionTitle, styles.sectionTitleSpaced]}>Ustawienia</Text>
-
-      {/* Kafelek motywu - placeholder pod przyszły przełącznik Jasny/Ciemny/Systemowy.
-          Chevron po prawej sygnalizuje, że kliknięcie otworzy nowy widok z opcjami */}
-      <TouchableOpacity style={styles.settingCard} activeOpacity={0.7}>
-        <View style={styles.settingLeft}>
-          <View style={styles.settingIconWrapper}>
-            <Ionicons name="contrast-outline" size={20} color="#8E8E93" />
-          </View>
-          <Text style={styles.settingName}>Motyw aplikacji</Text>
+      {isActive && (
+        <View style={[themeCardStyles.check, { backgroundColor: accent }]}>
+          <Ionicons name="checkmark" size={13} color="#000000" />
         </View>
-        <View style={styles.settingRight}>
-          <Text style={styles.settingValue}>Ciemny</Text>
-          <Ionicons name="chevron-forward" size={18} color="#3A3A3C" />
-        </View>
-      </TouchableOpacity>
-
-      {/* Miejsce na kolejne opcje ustawień w przyszłych sprintach */}
-      <TouchableOpacity style={styles.settingCard} activeOpacity={0.7}>
-        <View style={styles.settingLeft}>
-          <View style={styles.settingIconWrapper}>
-            <Ionicons name="notifications-outline" size={20} color="#8E8E93" />
-          </View>
-          <Text style={styles.settingName}>Powiadomienia</Text>
-        </View>
-        <View style={styles.settingRight}>
-          <Text style={styles.settingValue}>Włączone</Text>
-          <Ionicons name="chevron-forward" size={18} color="#3A3A3C" />
-        </View>
-      </TouchableOpacity>
-    </ScrollView>
+      )}
+    </TouchableOpacity>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
+const themeCardStyles = StyleSheet.create({
+  wrapper: {
     flex: 1,
-    backgroundColor: '#000000',
-  },
-  contentContainer: {
-    paddingBottom: 40,
-  },
-
-  // --- Nagłówek ---
-  header: {
-    paddingTop: 60,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: 0.3,
-  },
-
-  // --- Placeholder heatmapy ---
-  // Przerywana ramka (dashed border) sygnalizuje użytkownikowi, że to miejsce
-  // na przyszłą funkcję - konwencja znana z narzędzi projektowych (Figma, Sketch)
-  heatmapPlaceholder: {
-    backgroundColor: '#1C1C1E',
-    marginHorizontal: 16,
-    marginBottom: 28,
-    borderRadius: 20,
-    height: 200,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#2C2C2E',
-    borderStyle: 'dashed',
-    gap: 10,
-    paddingHorizontal: 24,
-  },
-  heatmapTitle: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#3A3A3C',
-  },
-  heatmapSub: {
-    fontSize: 13,
-    color: '#3A3A3C',
-    textAlign: 'center',
-    lineHeight: 19,
-  },
-
-  // --- Wspólny nagłówek sekcji ---
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    paddingHorizontal: 20,
-    marginBottom: 12,
-  },
-  sectionTitleSpaced: {
-    marginTop: 24,
-  },
-
-  // --- Kafelek nawyku ---
-  habitCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1C1C1E',
-    marginHorizontal: 16,
-    marginBottom: 10,
     borderRadius: 18,
-    padding: 16,
-    borderWidth: 0.5,
-    borderColor: '#2C2C2E',
-    gap: 14,
+    overflow: 'hidden',
+    borderWidth: 2,
+    minHeight: 130,
   },
-  checkbox: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: '#3A3A3C',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  // Stan odhaczony - wypełnienie zielenią zamiast pustej ramki
-  checkboxDone: {
-    backgroundColor: '#00E676',
-    borderColor: '#00E676',
-  },
-  habitTextWrapper: {
-    flex: 1,
-  },
-  habitName: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#FFFFFF',
-  },
-  // Odhaczony nawyk szarzeje - wzorzec znany z systemowych aplikacji zadań (Reminders)
-  habitNameDone: {
-    color: '#8E8E93',
-  },
-  habitSub: {
-    fontSize: 12,
-    color: '#8E8E93',
-    marginTop: 3,
-  },
-
-  // --- Kafelek ustawienia ---
-  settingCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#1C1C1E',
-    marginHorizontal: 16,
-    marginBottom: 10,
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 0.5,
-    borderColor: '#2C2C2E',
-  },
-  settingLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  // Kwadratowa ikona z lekko jaśniejszym tłem - wzorzec z iOS Settings
-  settingIconWrapper: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#2C2C2E',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  settingName: {
-    fontSize: 16,
-    color: '#FFFFFF',
-  },
-  settingRight: {
+  preview: {
+    height: 64,
+    padding: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    position: 'relative',
   },
-  settingValue: {
-    fontSize: 14,
-    color: '#8E8E93',
+  dot:  { width: 14, height: 14, borderRadius: 7 },
+  bar:  { flex: 1, height: 6, borderRadius: 3 },
+  info: { padding: 12, paddingTop: 10, flex: 1 },
+  name: { fontSize: 13, fontWeight: '700', marginBottom: 3 },
+  desc: { fontSize: 10, color: '#8E8E93', lineHeight: 14 },
+  check: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
+});
+
+// ─── Modal wyboru motywu ──────────────────────────────────────────────────────
+function ThemePickerModal({ visible, onClose }) {
+  const { themeId, setTheme, themes, colors } = useTheme();
+
+  const handleSelect = (id) => {
+    setTheme(id);
+    onClose();
+  };
+
+  const themeList = Object.values(themes);
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity
+        style={pickerStyles.backdrop}
+        activeOpacity={1}
+        onPress={onClose}
+      />
+      <View style={[pickerStyles.sheet, { backgroundColor: colors.card }]}>
+        {/* Uchwyt */}
+        <View style={[pickerStyles.handle, { backgroundColor: colors.border }]} />
+
+        <Text style={[pickerStyles.title, { color: colors.textPrimary }]}>
+          Wybierz motyw
+        </Text>
+        <Text style={[pickerStyles.subtitle, { color: colors.textSecondary }]}>
+          Zmiana jest natychmiastowa i zapamiętana
+        </Text>
+
+        {/* Siatka 2 kolumny — działa dla dowolnej liczby motywów */}
+        <View style={pickerStyles.grid}>
+          {Array.from({ length: Math.ceil(themeList.length / 2) }, (_, i) =>
+            themeList.slice(i * 2, i * 2 + 2)
+          ).map((row, rowIdx) => (
+            <View key={rowIdx} style={pickerStyles.row}>
+              {row.map((theme) => (
+                <ThemeCard
+                  key={theme.id}
+                  theme={theme}
+                  isActive={themeId === theme.id}
+                  onSelect={handleSelect}
+                />
+              ))}
+              {/* Wypełniacz gdy rząd ma tylko 1 element (nieparzysty ostatni) */}
+              {row.length === 1 && <View style={{ flex: 1 }} />}
+            </View>
+          ))}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const pickerStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  sheet: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingTop: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 36,
+  },
+  handle: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  title:    { fontSize: 20, fontWeight: '700', marginBottom: 4, paddingHorizontal: 4 },
+  subtitle: { fontSize: 13, marginBottom: 20, paddingHorizontal: 4 },
+  grid:     { gap: 10 },
+  row:      { flexDirection: 'row', gap: 10 },
+});
+
+// ─── Główny ekran profilu ─────────────────────────────────────────────────────
+export default function ProfileScreen({ navigation }) {
+  const [habits, setHabits]           = useState(INITIAL_HABITS);
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
+  const { workoutHistory }            = useWorkoutContext();
+  const { colors, themes, themeId }   = useTheme();
+
+  const styles = makeStyles(colors);
+
+  const toggleHabit = (id) =>
+    setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, done: !h.done } : h)));
+
+  const totalTonnage  = workoutHistory.reduce((a, w) => a + (w.tonnage ?? 0), 0);
+  const totalSessions = workoutHistory.length;
+  const lastWorkout   = workoutHistory[0];
+
+  const activeThemeLabel = themes[themeId]?.label ?? 'Ciemny';
+
+  return (
+    <>
+      <ScrollView
+        style={styles.screen}
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.header}>
+          <Text style={styles.title}>Profil</Text>
+        </View>
+
+        {/* Statystyki zbiorcze */}
+        <View style={styles.statsRow}>
+          <View style={styles.statCard}>
+            <Text style={styles.statVal}>{totalSessions}</Text>
+            <Text style={styles.statLbl}>Treningi</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statVal}>
+              {totalTonnage > 0 ? `${Math.round(totalTonnage / 1000)}t` : '—'}
+            </Text>
+            <Text style={styles.statLbl}>Tonaż</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statVal}>
+              {lastWorkout ? fmtDur(lastWorkout.timerSec) : '—'}
+            </Text>
+            <Text style={styles.statLbl}>Ostatni</Text>
+          </View>
+        </View>
+
+        {/* Historia treningów */}
+        <TouchableOpacity
+          style={styles.historyBtn}
+          activeOpacity={0.75}
+          onPress={() => navigation.navigate('WorkoutHistory')}
+        >
+          <View style={styles.historyLeft}>
+            <View style={styles.historyIconBox}>
+              <Ionicons name="time-outline" size={22} color={colors.accent} />
+            </View>
+            <View>
+              <Text style={styles.historyTitle}>Historia treningów</Text>
+              <Text style={styles.historySub}>
+                {totalSessions > 0
+                  ? `${totalSessions} ${totalSessions === 1 ? 'sesja' : totalSessions < 5 ? 'sesje' : 'sesji'} · ostatnia ${lastWorkout ? new Date(lastWorkout.savedAt).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }) : ''}`
+                  : 'Brak zapisanych treningów'}
+              </Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.borderMuted} />
+        </TouchableOpacity>
+
+        {/* Wykresy objętości */}
+        {totalSessions > 0 && (
+          <View style={styles.chartSection}>
+            <Text style={styles.sectionTitle}>Statystyki objętości</Text>
+            <VolumeChart />
+          </View>
+        )}
+
+        {/* Placeholder heatmapy */}
+        <View style={styles.heatmapPlaceholder}>
+          <Ionicons name="body-outline" size={52} color={colors.borderMuted} />
+          <Text style={styles.heatmapTitle}>Heatmapa sylwetki</Text>
+          <Text style={styles.heatmapSub}>
+            Po pierwszych treningach zaświeci się tu mapa{'\n'}najczęściej trenowanych partii ciała
+          </Text>
+        </View>
+
+        {/* Nawyki */}
+        <Text style={styles.sectionTitle}>Codzienne nawyki</Text>
+        {habits.map((habit) => (
+          <TouchableOpacity
+            key={habit.id}
+            style={styles.habitCard}
+            onPress={() => toggleHabit(habit.id)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.checkbox, habit.done && styles.checkboxDone]}>
+              {habit.done && <Ionicons name="checkmark" size={16} color={colors.accentText} />}
+            </View>
+            <View style={styles.habitTextWrapper}>
+              <Text style={[styles.habitName, habit.done && styles.habitNameDone]}>
+                {habit.name}
+              </Text>
+              <Text style={styles.habitSub}>
+                {habit.done ? 'Dzisiaj: odhaczone ✓' : 'Dzisiaj: jeszcze nie'}
+              </Text>
+            </View>
+            <Ionicons name={habit.icon} size={22} color={habit.done ? colors.borderMuted : colors.textSecondary} />
+          </TouchableOpacity>
+        ))}
+
+        {/* Ustawienia */}
+        <Text style={[styles.sectionTitle, styles.sectionTitleSpaced]}>Ustawienia</Text>
+
+        {/* Motyw aplikacji — aktywny selektor */}
+        <TouchableOpacity
+          style={styles.settingCard}
+          activeOpacity={0.7}
+          onPress={() => setThemePickerOpen(true)}
+        >
+          <View style={styles.settingLeft}>
+            <View style={[styles.settingIconWrapper, { backgroundColor: colors.accentSoft }]}>
+              <Ionicons name="contrast-outline" size={20} color={colors.accent} />
+            </View>
+            <Text style={styles.settingName}>Motyw aplikacji</Text>
+          </View>
+          <View style={styles.settingRight}>
+            <Text style={[styles.settingValue, { color: colors.accent }]}>{activeThemeLabel}</Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.borderMuted} />
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.settingCard} activeOpacity={0.7}>
+          <View style={styles.settingLeft}>
+            <View style={styles.settingIconWrapper}>
+              <Ionicons name="notifications-outline" size={20} color={colors.textSecondary} />
+            </View>
+            <Text style={styles.settingName}>Powiadomienia</Text>
+          </View>
+          <View style={styles.settingRight}>
+            <Text style={styles.settingValue}>Włączone</Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.borderMuted} />
+          </View>
+        </TouchableOpacity>
+      </ScrollView>
+
+      <ThemePickerModal
+        visible={themePickerOpen}
+        onClose={() => setThemePickerOpen(false)}
+      />
+    </>
+  );
+}
+
+const makeStyles = (c) => StyleSheet.create({
+  screen:           { flex: 1, backgroundColor: c.background },
+  contentContainer: { paddingBottom: 40 },
+  header:           { paddingTop: 60, paddingHorizontal: 20, paddingBottom: 16 },
+  title:            { fontSize: 32, fontWeight: '700', color: c.textPrimary, letterSpacing: 0.3 },
+
+  statsRow: { flexDirection: 'row', paddingHorizontal: 16, gap: 10, marginBottom: 16 },
+  statCard: { flex: 1, backgroundColor: c.card, borderRadius: 16, padding: 14, alignItems: 'center', borderWidth: 0.5, borderColor: c.border },
+  statVal:  { fontSize: 20, fontWeight: '700', color: c.textPrimary, marginBottom: 3 },
+  statLbl:  { fontSize: 11, color: c.textSecondary },
+
+  historyBtn: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: c.backgroundSecondary,
+    marginHorizontal: 16, marginBottom: 20,
+    borderRadius: 18, padding: 16,
+    borderWidth: 0.5, borderColor: c.accentSoft,
+  },
+  historyLeft:    { flexDirection: 'row', alignItems: 'center', flex: 1, gap: 14 },
+  historyIconBox: { width: 44, height: 44, borderRadius: 13, backgroundColor: c.accentSoft, justifyContent: 'center', alignItems: 'center' },
+  historyTitle:   { fontSize: 15, fontWeight: '600', color: c.textPrimary },
+  historySub:     { fontSize: 12, color: c.textSecondary, marginTop: 3 },
+
+  chartSection: { marginBottom: 24 },
+
+  heatmapPlaceholder: {
+    backgroundColor: c.card, marginHorizontal: 16, marginBottom: 28,
+    borderRadius: 20, height: 180,
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1, borderColor: c.border, borderStyle: 'dashed',
+    gap: 10, paddingHorizontal: 24,
+  },
+  heatmapTitle: { fontSize: 16, fontWeight: '500', color: c.borderMuted },
+  heatmapSub:   { fontSize: 13, color: c.borderMuted, textAlign: 'center', lineHeight: 19 },
+
+  sectionTitle:       { fontSize: 20, fontWeight: '600', color: c.textPrimary, paddingHorizontal: 20, marginBottom: 12 },
+  sectionTitleSpaced: { marginTop: 24 },
+
+  habitCard:       { flexDirection: 'row', alignItems: 'center', backgroundColor: c.card, marginHorizontal: 16, marginBottom: 10, borderRadius: 18, padding: 16, borderWidth: 0.5, borderColor: c.border, gap: 14 },
+  checkbox:        { width: 26, height: 26, borderRadius: 8, borderWidth: 1.5, borderColor: c.borderMuted, justifyContent: 'center', alignItems: 'center' },
+  checkboxDone:    { backgroundColor: c.accent, borderColor: c.accent },
+  habitTextWrapper:{ flex: 1 },
+  habitName:       { fontSize: 16, fontWeight: '500', color: c.textPrimary },
+  habitNameDone:   { color: c.textSecondary },
+  habitSub:        { fontSize: 12, color: c.textSecondary, marginTop: 3 },
+
+  settingCard:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: c.card, marginHorizontal: 16, marginBottom: 10, borderRadius: 18, padding: 16, borderWidth: 0.5, borderColor: c.border },
+  settingLeft:        { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  settingIconWrapper: { width: 36, height: 36, borderRadius: 10, backgroundColor: c.border, justifyContent: 'center', alignItems: 'center' },
+  settingName:        { fontSize: 16, color: c.textPrimary },
+  settingRight:       { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  settingValue:       { fontSize: 14, color: c.textSecondary },
 });
