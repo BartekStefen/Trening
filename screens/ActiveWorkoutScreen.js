@@ -15,10 +15,20 @@ import { useWorkoutContext } from '../context/WorkoutContext';
 import { useTheme } from '../context/ThemeContext';
 import { EXERCISE_DATABASE, EXERCISE_MAP } from './ExercisesLibraryScreen';
 import RestTimerBanner         from '../components/workout/RestTimerBanner';
+import { applyRampToExercise, getRampRecommendation, getSetRestDuration } from '../utils/rampWarmup';
+import {
+  setAudioAssistantMode,
+  initAudioAssistant,
+  resetRestAudioSession,
+  handleRestCountdown,
+  handleRestEnd,
+  stopAudioAssistant,
+  unloadAudioAssistant,
+  AUDIO_MODES,
+} from '../utils/workoutAudioAssistant';
 import WorkoutTimerHUD         from '../components/workout/WorkoutTimerHUD';
 import MuscleDistributionModal from '../components/modals/MuscleDistributionModal';
 import SwipeableSetRow         from '../components/workout/SwipeableSetRow';
-import RepsModeSheet             from '../components/workout/RepsModeSheet';
 import RestPickerModal         from '../components/modals/RestPickerModal';
 import SwapExerciseModal       from '../components/modals/SwapExerciseModal';
 import WorkoutSummaryModal     from '../components/modals/WorkoutSummaryModal';
@@ -27,6 +37,7 @@ import PlateCalculatorModal    from '../components/workout/PlateCalculatorModal'
 import ExerciseHistoryModal    from '../components/workout/ExerciseHistoryModal';
 import AddCustomExerciseModal  from '../components/workout/AddCustomExerciseModal';
 import ExerciseActionsModal    from '../components/modals/ExerciseActionsModal';
+import RampWarmupModal         from '../components/modals/RampWarmupModal';
 import MachineSettingsModal   from '../components/workout/MachineSettingsModal';
 import PRCelebration          from '../components/workout/PRCelebration';
 import LoadModeModal, { LOAD_MODES } from '../components/workout/LoadModeModal';
@@ -42,7 +53,7 @@ import {
   dismissWorkoutLockScreenNotification,
   cancelAllWorkoutNotifications,
 } from '../components/workout/WorkoutNotificationService';
-import { parseRepsString, repsForVolume } from '../utils/repsUtils';
+import { normalizeExecutionSet, repsForVolume } from '../utils/repsUtils';
 
 const GYM_KEYWORDS = [
   'kg','kilo','powt','rep','rpe','rir','zapas','seri','max','maksa','pr','rekord',
@@ -308,17 +319,15 @@ const convertLibraryExercise = (ex, index) => {
       ...base,
       sets: cfg.setRows.map((row, i) => {
         const rowReps = row.reps ?? '';
-        const suggested = isRange && rowReps
-          ? `${rowReps.replace('-', '–')} pow.`
-          : null;
         return {
           id:          `cs_${ex.id}_${i + 1}_${Date.now() + i}`,
           prevLog:     '—',
           kg:          row.weight ?? '',
-          reps:        rowReps,
+          plannedReps: isRange && rowReps ? rowReps : null,
+          reps:        isRange ? '' : rowReps,
           rpe:         '',
           done:        false,
-          suggested,
+          suggested:   null,
           aiSuggested: false,
           setType:     'N',
         };
@@ -331,10 +340,8 @@ const convertLibraryExercise = (ex, index) => {
   const setTypes  = cfg?.setTypes ?? [];
   const prefillKg = cfg?.weight ?? '';
   const hasLegacyRange = cfg?.repsMin && cfg?.repsMax;
-  const prefillReps = hasLegacyRange
-    ? `${cfg.repsMin}-${cfg.repsMax}`
-    : (cfg?.repsMin ? String(cfg.repsMin) : '');
-  const suggested   = hasLegacyRange ? `${cfg.repsMin}–${cfg.repsMax} pow.` : null;
+  const legacyRangeStr = hasLegacyRange ? `${cfg.repsMin}-${cfg.repsMax}` : '';
+  const prefillReps = hasLegacyRange ? '' : (cfg?.repsMin ? String(cfg.repsMin) : '');
   const legacyRepsMode = hasLegacyRange ? 'range' : (cfg?.repsMode ?? 'single');
 
   return {
@@ -344,15 +351,23 @@ const convertLibraryExercise = (ex, index) => {
       id:          `cs_${ex.id}_${i + 1}_${Date.now() + i}`,
       prevLog:     '—',
       kg:          prefillKg,
+      plannedReps: hasLegacyRange ? legacyRangeStr : null,
       reps:        prefillReps,
       rpe:         '',
       done:        false,
-      suggested,
+      suggested:   null,
       aiSuggested: false,
       setType:     setTypes[i] ?? 'N',
     })),
   };
 };
+
+const normalizeExerciseSets = (ex) => ({
+  ...ex,
+  sets: (ex.sets ?? []).map((s) =>
+    normalizeExecutionSet(s, ex.planConfig?.repsMode),
+  ),
+});
 
 // ─── Epley 1RM: waga × (1 + powt/30) ────────────────────────────────────────
 const calcEpley1RM = (kg, reps) => {
@@ -841,11 +856,11 @@ const ExerciseCard = memo(function ExerciseCard({
   onToggleSuperset,
   bodyWeight,
   onUpdateBodyWeight,
-  onRepsModeChange,
+  onApplyRamp,
 }) {
   const isBWWeighted = exercise.exerciseType === 'bodyweight_weighted';
   const { colors } = useTheme();
-  const { useRIR }  = useWorkoutContext();
+  const { useRIR, rampEnabled } = useWorkoutContext();
   const cardStyles = makeCardStyles(colors);
   const [restModal, setRestModal]                   = useState(false);
   const [swapModal, setSwapModal]                   = useState(false);
@@ -854,8 +869,21 @@ const ExerciseCard = memo(function ExerciseCard({
   const [historyVisible, setHistoryVisible]         = useState(false);
   const [machineSettingsVisible, setMachineSettingsVisible] = useState(false);
   const [loadModeVisible, setLoadModeVisible]       = useState(false);
-  const [repsModeSheetVisible, setRepsModeSheetVisible] = useState(false);
+  const [rampModalVisible, setRampModalVisible]     = useState(false);
+  const [rampKgOverride, setRampKgOverride]       = useState(null);
   const [bandLevel, setBandLevel]                   = useState('medium'); // dla trybu gumy
+
+  const rampAlreadyApplied = exercise.sets.some((s) => s.isRamp);
+  const rampPlan = useMemo(
+    () => getRampRecommendation(exercise, { overrideWorkingKg: rampKgOverride }),
+    [exercise, rampKgOverride],
+  );
+
+  const openRampModal = () => {
+    setRampKgOverride(null);
+    setActionsModal(false);
+    setRampModalVisible(true);
+  };
 
   const loadMode = exercise.loadMode ?? 'barbell';
   const loadModeInfo = LOAD_MODES.find((m) => m.id === loadMode);
@@ -883,8 +911,6 @@ const ExerciseCard = memo(function ExerciseCard({
   // ZADANIE 4: limit 3 drop-setów per ćwiczenie
   const dropSetCount     = exercise.sets.filter((s) => s.isDropSet).length;
   const dropSetLimitReached = dropSetCount >= 3;
-  const repsMode = exercise.planConfig?.repsMode ?? 'single';
-  const isRepsRangeMode = repsMode === 'range';
 
   const confirmDeleteExercise = () => {
     Alert.alert(
@@ -1027,16 +1053,7 @@ const ExerciseCard = memo(function ExerciseCard({
         ) : (
           <Text style={[cardStyles.colH, { width: 46, textAlign: 'center' }]}>kg</Text>
         )}
-        <TouchableOpacity
-          style={[cardStyles.colRepsBtn, { width: isRepsRangeMode ? 88 : 52 }]}
-          onPress={() => setRepsModeSheetVisible(true)}
-          activeOpacity={0.7}
-        >
-          <Text style={[cardStyles.colH, { textAlign: 'center' }]}>
-            {isRepsRangeMode ? 'Zakres' : 'Powt.'}
-          </Text>
-          <Ionicons name="chevron-down" size={10} color={colors.textTertiary} />
-        </TouchableOpacity>
+        <Text style={[cardStyles.colH, { width: 56, textAlign: 'center' }]}>Powt.</Text>
         <Text style={[cardStyles.colH, { width: 44, textAlign: 'center' }]}>✓</Text>
       </View>
 
@@ -1056,7 +1073,6 @@ const ExerciseCard = memo(function ExerciseCard({
           isBWWeighted={isBWWeighted}
           bodyWeight={bodyWeight}
           onUpdateBodyWeight={onUpdateBodyWeight}
-          repsMode={repsMode}
         />
       ))}
 
@@ -1130,7 +1146,21 @@ const ExerciseCard = memo(function ExerciseCard({
         onToggleSuperset={() => { setActionsModal(false); onToggleSuperset?.(exIndex); }}
         onMachineSettings={() => { setActionsModal(false); setMachineSettingsVisible(true); }}
         onLoadMode={() => { setActionsModal(false); setLoadModeVisible(true); }}
+        onRampWarmup={rampEnabled ? openRampModal : undefined}
+        rampAlreadyApplied={rampAlreadyApplied}
         currentLoadMode={loadMode}
+      />
+
+      <RampWarmupModal
+        isVisible={rampModalVisible}
+        exerciseName={exercise.name}
+        plan={rampPlan}
+        onWorkingKgChange={setRampKgOverride}
+        onApply={() => {
+          setRampModalVisible(false);
+          onApplyRamp?.(exIndex, rampKgOverride ?? rampPlan.workingKg);
+        }}
+        onClose={() => setRampModalVisible(false)}
       />
 
       <MachineSettingsModal
@@ -1144,14 +1174,6 @@ const ExerciseCard = memo(function ExerciseCard({
         currentMode={loadMode}
         onSelect={(mode) => onChangeLoadMode?.(exIndex, mode)}
         onClose={() => setLoadModeVisible(false)}
-      />
-
-      <RepsModeSheet
-        visible={repsModeSheetVisible}
-        currentMode={repsMode}
-        onSelect={(mode) => onRepsModeChange(exIndex, mode)}
-        onClose={() => setRepsModeSheetVisible(false)}
-        colors={colors}
       />
     </Animated.View>
   );
@@ -1172,7 +1194,6 @@ const makeCardStyles = (c) => StyleSheet.create({
   restChipText:  { fontSize: 12, color: c.textSecondary, fontWeight: '500' },
   colHeaders:    { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 6 },
   colH:          { fontSize: 10, color: c.textTertiary, fontWeight: '500', letterSpacing: 0.3 },
-  colRepsBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2 },
   divider:       { height: 0.5, backgroundColor: c.border, marginVertical: 12 },
   actions:       { flexDirection: 'row', gap: 8, alignItems: 'center' },
   actionBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 12, paddingVertical: 10, borderWidth: 1 },
@@ -1376,7 +1397,11 @@ const makeRackStyles = (c, insets) => StyleSheet.create({
 });
 
 export default function ActiveWorkoutScreen({ navigation, route }) {
-  const { activeWorkout, customPlans, minimizeWorkout, saveWorkoutToHistory, clearActiveWorkout, updateCustomPlan } = useWorkoutContext();
+  const {
+    activeWorkout, customPlans, minimizeWorkout, saveWorkoutToHistory,
+    clearActiveWorkout, updateCustomPlan,
+    rampEnabled, audioAssistantMode,
+  } = useWorkoutContext();
   const { colors } = useTheme();
   const { width: winW, height: winH } = useWindowDimensions();
   const isLandscape = winW > winH;
@@ -1399,7 +1424,9 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   const customPlanId       = route?.params?.customPlanId ?? null;
 
   const initialExercises = useMemo(() => {
-    if (activeWorkout?.exercises?.length > 0) return activeWorkout.exercises;
+    if (activeWorkout?.exercises?.length > 0) {
+      return activeWorkout.exercises.map(normalizeExerciseSets);
+    }
     if (customExercises?.length > 0) return customExercises.map(convertLibraryExercise);
     if (templateId === 'lower') return LOWER_EXERCISES();
     return UPPER_EXERCISES();
@@ -1408,6 +1435,7 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   const initialTimerSec = activeWorkout?.timerSec ?? 0;
 
   const [exercises, setExercises]           = useState(initialExercises);
+  const restSessionKeyRef                   = useRef(0);
   // Oryginalna kolejność ID — używana przy przywracaniu po rozłączeniu super-serii
   const originalOrderRef = useRef(initialExercises.map((ex) => ex.id));
 
@@ -1455,6 +1483,17 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
     const task = InteractionManager.runAfterInteractions(() => setIsReady(true));
     return () => task.cancel();
   }, []);
+
+  useEffect(() => {
+    setAudioAssistantMode(audioAssistantMode);
+    if (audioAssistantMode !== AUDIO_MODES.OFF) {
+      initAudioAssistant();
+    }
+    return () => {
+      stopAudioAssistant();
+      unloadAudioAssistant();
+    };
+  }, [audioAssistantMode]);
 
   // ─── Powiadomienia: uprawnienia + czyszczenie przy odmontowaniu ──────────────
   useEffect(() => {
@@ -1512,22 +1551,30 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   }, [exercises, workoutName, doneSets]);
 
   const showRestBanner = useCallback((label, duration) => {
+    const newKey = Date.now();
+    restSessionKeyRef.current = newKey;
+    resetRestAudioSession(newKey);
     setRestLabel(label);
     setRestDuration(duration);
-    setRestKey((k) => k + 1);
+    setRestKey(newKey);
     setRestActive(true);
     restActiveRef.current = true;
     restDurationRef.current = duration;
     restLabelRef.current = label;
-    // Wrist / smartwatch notification: fires when rest ends
     const exerciseName = label.split(' – ')[0];
     scheduleRestEndNotification(exerciseName, duration);
   }, []);
 
-  const hideRestBanner = useCallback(() => {
+  const hideRestBanner = useCallback((opts = {}) => {
+    const natural = opts.natural !== false;
     setRestActive(false);
     restActiveRef.current = false;
     cancelRestEndNotification();
+    if (natural) {
+      handleRestEnd(true);
+    } else {
+      stopAudioAssistant();
+    }
   }, []);
 
   const handleRestRemainingChange = useCallback((remaining) => {
@@ -1535,6 +1582,7 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
     if (remaining <= 0) return;
     const exerciseName = restLabelRef.current.split(' – ')[0];
     scheduleRestEndNotification(exerciseName, remaining);
+    handleRestCountdown(remaining, restSessionKeyRef.current);
   }, []);
 
   const toggleHomeMode = useCallback(() => {
@@ -1564,7 +1612,7 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
         sets: ex.sets.map((s, si) => {
           if (!s.done && !found) {
             found = true;
-            showRestBanner(`${ex.name} – s.${si + 1}`, ex.restDuration);
+            showRestBanner(`${ex.name} – s.${si + 1}`, getSetRestDuration(ex, s));
             return { ...s, done: true };
           }
           return s;
@@ -1588,15 +1636,15 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
           i !== exIdx ? e : { ...e, sets: e.sets.map((s) => s.id === setId ? { ...s, done: false } : s) }
         );
       }
-      // Wykrywanie PR: nowe kg > poprzedni rekord z prevLog
       const prevKg = parseFloat((set?.prevLog ?? '').split(' ')[0]);
       const newKg  = parseFloat(set?.kg ?? '');
       const hasPrevLog = set?.prevLog && set.prevLog !== '—' && !isNaN(prevKg) && prevKg > 0;
-      if (set && hasPrevLog && !isNaN(newKg) && newKg > prevKg) {
+      const isPR = set && hasPrevLog && !isNaN(newKg) && newKg > prevKg;
+      if (set && isPR) {
         setTimeout(() => setPRData({ exerciseName: ex.name, newKg: set.kg, newReps: set.reps }), 150);
       }
       const si = ex.sets.findIndex((s) => s.id === setId);
-      showRestBanner(`${ex.name} – s.${si + 1}`, ex.restDuration);
+      showRestBanner(`${ex.name} – s.${si + 1}`, getSetRestDuration(ex, set));
       return prev.map((e, i) =>
         i !== exIdx ? e : { ...e, sets: e.sets.map((s) => s.id === setId ? { ...s, done: true } : s) }
       );
@@ -1620,8 +1668,8 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
         sets: [...ex.sets, {
           id: Date.now().toString(),
           prevLog: last?.prevLog ?? '—',
-          kg: last?.kg ?? '', reps: last?.reps ?? '', rpe: '',
-          done: false, suggested: null, aiSuggested: false,
+          kg: last?.kg ?? '', reps: '', plannedReps: last?.plannedReps ?? null, rpe: '',
+          done: false, suggested: last?.suggested ?? null, aiSuggested: false,
         }],
       };
     }));
@@ -1657,26 +1705,6 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
 
   const handleRestChange = useCallback((exIdx, sec) => {
     setExercises((prev) => prev.map((ex, i) => i !== exIdx ? ex : { ...ex, restDuration: sec }));
-  }, []);
-
-  const handleRepsModeChange = useCallback((exIdx, mode) => {
-    setExercises((prev) => prev.map((ex, i) => {
-      if (i !== exIdx) return ex;
-      const sets = ex.sets.map((s) => {
-        const parsed = parseRepsString(s.reps);
-        if (mode === 'single') {
-          const val = parsed.mode === 'range' ? (parsed.min || parsed.max) : parsed.value;
-          return { ...s, reps: val };
-        }
-        if (parsed.mode === 'range') return s;
-        return { ...s, reps: parsed.value || '' };
-      });
-      return {
-        ...ex,
-        sets,
-        planConfig: { ...(ex.planConfig ?? {}), repsMode: mode },
-      };
-    }));
   }, []);
 
   const handleCascadeUpdate = useCallback((exIdx, setIdx, newKg, newReps, nextTrainingKg) => {
@@ -1793,8 +1821,8 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
       const ts      = Date.now();
 
       const dropSets = [
-        { id: `drop_${ts}_1`, prevLog: sourceSet.prevLog ?? '—', kg: String(drop1Kg), reps: sourceSet.reps ?? '', rpe: '', done: false, suggested: null, aiSuggested: false, isDropSet: true },
-        { id: `drop_${ts}_2`, prevLog: sourceSet.prevLog ?? '—', kg: String(drop2Kg), reps: sourceSet.reps ?? '', rpe: '', done: false, suggested: null, aiSuggested: false, isDropSet: true },
+        { id: `drop_${ts}_1`, prevLog: sourceSet.prevLog ?? '—', kg: String(drop1Kg), reps: '', plannedReps: sourceSet.plannedReps ?? null, rpe: '', done: false, suggested: null, aiSuggested: false, isDropSet: true },
+        { id: `drop_${ts}_2`, prevLog: sourceSet.prevLog ?? '—', kg: String(drop2Kg), reps: '', plannedReps: sourceSet.plannedReps ?? null, rpe: '', done: false, suggested: null, aiSuggested: false, isDropSet: true },
       ];
 
       const setsBelow = ex.sets.slice(setIdx + 1);
@@ -1827,6 +1855,12 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   const handleChangeLoadMode = useCallback((exIdx, mode) => {
     setExercises((prev) => prev.map((ex, i) =>
       i !== exIdx ? ex : { ...ex, loadMode: mode }
+    ));
+  }, []);
+
+  const handleApplyRamp = useCallback((exIdx, workingKg) => {
+    setExercises((prev) => prev.map((ex, i) =>
+      i !== exIdx ? ex : applyRampToExercise(ex, workingKg)
     ));
   }, []);
 
@@ -2038,7 +2072,7 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
                         onToggleSuperset={handleToggleSuperset}
                         bodyWeight={bodyWeight}
                         onUpdateBodyWeight={() => { setTempBW(String(bodyWeight)); setBWModalVisible(true); }}
-                        onRepsModeChange={handleRepsModeChange}
+                        onApplyRamp={handleApplyRamp}
                       />
                       {showConnector && (
                         <SupersetConnector

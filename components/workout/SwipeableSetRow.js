@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../../context/ThemeContext';
 import { useWorkoutContext } from '../../context/WorkoutContext';
-import { formatRepsString, parseRepsString, repsForVolume } from '../../utils/repsUtils';
+import { repsForVolume, formatPlannedRepsDisplay } from '../../utils/repsUtils';
 
 const GYM_KEYWORDS = [
   'kg','kilo','powt','rep','rpe','rir','zapas','seri','max','maksa','pr','rekord',
@@ -281,13 +281,8 @@ const SwipeableSetRow = ({
   isBWWeighted,     // ćwiczenie z masą własną + obciążenie (np. podciąganie z pasem)
   bodyWeight,       // waga ciała z profilu (kg)
   onUpdateBodyWeight, // callback — otwiera modal do aktualizacji wagi ciała
-  repsMode = 'single',
 }) => {
-  const { prevLog, kg, reps, rpe, done, suggested, aiSuggested, isDropSet } = setData;
-  const isRange = repsMode === 'range';
-  const parsedReps = parseRepsString(reps);
-  const repsMin = isRange ? (parsedReps.mode === 'range' ? parsedReps.min : parsedReps.value) : reps;
-  const repsMax = isRange && parsedReps.mode === 'range' ? parsedReps.max : '';
+  const { prevLog, kg, reps, rpe, done, suggested, aiSuggested, isDropSet, plannedReps } = setData;
   const [aiOpen, setAiOpen]           = useState(false);
   const [rpePickerOpen, setRpePickerOpen] = useState(false);
   const swipeRef                      = useRef(null);
@@ -457,46 +452,23 @@ const SwipeableSetRow = ({
             </View>
           )}
 
-          {/* Powtórzenia / zakres od–do */}
-          {isRange ? (
-            <View style={styles.rangeCell}>
-              <TextInput
-                style={[styles.rangeInput, done && styles.inputDone]}
-                value={repsMin}
-                onChangeText={(v) => onUpdate('reps', formatRepsString(v.replace(/\D/g, ''), repsMax))}
-                keyboardType="number-pad"
-                maxLength={3}
-                placeholder="—"
-                placeholderTextColor={colors.textTertiary}
-                editable={!done}
-                selectTextOnFocus
-              />
-              <Text style={[styles.toLabel, done && { color: colors.borderMuted }]}>do</Text>
-              <TextInput
-                style={[styles.rangeInput, done && styles.inputDone]}
-                value={repsMax}
-                onChangeText={(v) => onUpdate('reps', formatRepsString(repsMin, v.replace(/\D/g, '')))}
-                keyboardType="number-pad"
-                maxLength={3}
-                placeholder="—"
-                placeholderTextColor={colors.textTertiary}
-                editable={!done}
-                selectTextOnFocus
-              />
-            </View>
-          ) : (
-            <TextInput
-              style={[styles.input, styles.inputReps, done && styles.inputDone]}
-              value={reps}
-              onChangeText={(v) => onUpdate('reps', v.replace(/\D/g, ''))}
-              keyboardType="numeric"
-              maxLength={3}
-              placeholder="—"
-              placeholderTextColor={colors.textTertiary}
-              editable={!done}
-              selectTextOnFocus
-            />
-          )}
+          {/* Powtórzenia — zakres w polu, po kliknięciu wpis faktycznej liczby */}
+          <TextInput
+            style={[
+              styles.input,
+              styles.inputReps,
+              plannedReps && !reps && !done && { backgroundColor: colors.card },
+              done && styles.inputDone,
+            ]}
+            value={reps}
+            onChangeText={(v) => onUpdate('reps', v.replace(/\D/g, ''))}
+            keyboardType="numeric"
+            maxLength={3}
+            placeholder={plannedReps ? formatPlannedRepsDisplay(plannedReps) : '—'}
+            placeholderTextColor={colors.textTertiary}
+            editable={!done}
+            selectTextOnFocus
+          />
 
           {/* Checkbox */}
           <TouchableOpacity
@@ -582,14 +554,7 @@ const makeStyles = (c) => StyleSheet.create({
   rpeTouchable:  { justifyContent: 'center', alignItems: 'center' },
   kgText:        { fontSize: 15, fontWeight: '700', color: c.textPrimary },
   kgPlaceholder: { color: c.borderMuted },
-  inputReps:     { width: 52 },
-  rangeCell:     { width: 88, flexDirection: 'row', alignItems: 'center', gap: 2 },
-  rangeInput: {
-    flex: 1, minHeight: 48,
-    backgroundColor: c.background, borderWidth: 1, borderColor: c.border, borderRadius: 10,
-    fontSize: 13, fontWeight: '700', color: c.textPrimary, textAlign: 'center', paddingVertical: 4,
-  },
-  toLabel:       { fontSize: 10, fontWeight: '600', color: c.textTertiary },
+  inputReps:     { width: 56 },
   inputDone:     { color: c.borderMuted, borderColor: c.card },
   inputWrap:     { position: 'relative', width: 46 },
   arrow:         { position: 'absolute', top: -7, right: -3, backgroundColor: c.background, borderRadius: 4 },

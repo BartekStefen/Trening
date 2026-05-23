@@ -33,3 +33,17 @@ export function repsForVolume(reps) {
   }
   return parseInt(parsed.value, 10) || 0;
 }
+
+export function formatPlannedRepsDisplay(plannedReps) {
+  return (plannedReps ?? '').replace('-', '–');
+}
+
+/** W treningu: zakres z planu → plannedReps; reps = faktyczna liczba wykonanych powt. */
+export function normalizeExecutionSet(set, repsMode) {
+  if (!set) return set;
+  if (set.plannedReps) return set;
+  if (repsMode === 'range' && isRepsRange(set.reps)) {
+    return { ...set, plannedReps: set.reps, reps: '' };
+  }
+  return set;
+}
