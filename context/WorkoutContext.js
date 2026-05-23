@@ -1,11 +1,19 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getNextAudioMode, AUDIO_MODES } from '../utils/audioAssistantConstants';
+import { normExerciseName } from '../utils/workoutAutoregulation';
 
 const STORAGE_PLANS    = '@fitness_custom_plans';
 const STORAGE_HISTORY  = '@fitness_workout_history';
 const STORAGE_USE_RIR  = '@fitness_use_rir';
+const STORAGE_RAMP     = '@fitness_ramp_enabled';
+const STORAGE_AUDIO    = '@fitness_audio_assistant_mode';
+const STORAGE_AUDIO_LEGACY = '@fitness_audio_assistant';
 const STORAGE_HIDDEN_BUILTINS = '@fitness_hidden_builtins';
+const STORAGE_SURVIVAL = '@fitness_survival_mode';
+const STORAGE_AUTO_DELOAD = '@fitness_auto_deload';
+const STORAGE_EX_RECORDS = '@fitness_exercise_records';
 
 // ─── Kontekst globalny aplikacji fitness ──────────────────────────────────────
 // Stan globalny: zminimalizowany trening, plany użytkownika, historia
@@ -16,23 +24,43 @@ export function WorkoutProvider({ children }) {
   const [customPlans, setCustomPlans]       = useState([]);
   const [workoutHistory, setWorkoutHistory] = useState([]);
   const [useRIR, setUseRIR]                   = useState(false);
+  const [rampEnabled, setRampEnabled]         = useState(false);
+  const [audioAssistantMode, setAudioAssistantMode] = useState(AUDIO_MODES.OFF);
   const [hiddenBuiltins, setHiddenBuiltins]   = useState([]);
+  const [survivalModeEnabled, setSurvivalModeEnabled] = useState(false);
+  const [autoDeloadEnabled, setAutoDeloadEnabled]     = useState(false);
+  const [exerciseRecords, setExerciseRecords]         = useState({});
   const [hydrated, setHydrated]               = useState(false);
 
   // Ładowanie danych z AsyncStorage przy starcie
   useEffect(() => {
     (async () => {
       try {
-        const [plans, history, rir, hidden] = await Promise.all([
+        const [plans, history, rir, ramp, audio, audioLegacy, hidden, survival, deload, records] = await Promise.all([
           AsyncStorage.getItem(STORAGE_PLANS),
           AsyncStorage.getItem(STORAGE_HISTORY),
           AsyncStorage.getItem(STORAGE_USE_RIR),
+          AsyncStorage.getItem(STORAGE_RAMP),
+          AsyncStorage.getItem(STORAGE_AUDIO),
+          AsyncStorage.getItem(STORAGE_AUDIO_LEGACY),
           AsyncStorage.getItem(STORAGE_HIDDEN_BUILTINS),
+          AsyncStorage.getItem(STORAGE_SURVIVAL),
+          AsyncStorage.getItem(STORAGE_AUTO_DELOAD),
+          AsyncStorage.getItem(STORAGE_EX_RECORDS),
         ]);
         if (plans)   setCustomPlans(JSON.parse(plans));
         if (history) setWorkoutHistory(JSON.parse(history));
         if (rir !== null) setUseRIR(rir === 'true');
+        if (ramp !== null) setRampEnabled(ramp === 'true');
+        if (audio === AUDIO_MODES.VOICE || audio === AUDIO_MODES.TICK) {
+          setAudioAssistantMode(audio);
+        } else if (audioLegacy === 'true') {
+          setAudioAssistantMode(AUDIO_MODES.VOICE);
+        }
         if (hidden)  setHiddenBuiltins(JSON.parse(hidden));
+        if (survival !== null) setSurvivalModeEnabled(survival === 'true');
+        if (deload !== null) setAutoDeloadEnabled(deload === 'true');
+        if (records) setExerciseRecords(JSON.parse(records));
       } catch {}
       setHydrated(true);
     })();
@@ -56,6 +84,18 @@ export function WorkoutProvider({ children }) {
     try { await AsyncStorage.setItem(STORAGE_USE_RIR, String(next)); } catch {}
   }, [useRIR]);
 
+  const toggleRamp = useCallback(async () => {
+    const next = !rampEnabled;
+    setRampEnabled(next);
+    try { await AsyncStorage.setItem(STORAGE_RAMP, String(next)); } catch {}
+  }, [rampEnabled]);
+
+  const cycleAudioAssistant = useCallback(async () => {
+    const next = getNextAudioMode(audioAssistantMode);
+    setAudioAssistantMode(next);
+    try { await AsyncStorage.setItem(STORAGE_AUDIO, next); } catch {}
+  }, [audioAssistantMode]);
+
   const hideBuiltin = useCallback(async (id) => {
     setHiddenBuiltins((prev) => {
       const next = prev.includes(id) ? prev : [...prev, id];
@@ -68,6 +108,36 @@ export function WorkoutProvider({ children }) {
     setHiddenBuiltins((prev) => {
       const next = prev.filter((x) => x !== id);
       AsyncStorage.setItem(STORAGE_HIDDEN_BUILTINS, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  const toggleSurvivalMode = useCallback(async () => {
+    const next = !survivalModeEnabled;
+    setSurvivalModeEnabled(next);
+    try { await AsyncStorage.setItem(STORAGE_SURVIVAL, String(next)); } catch {}
+  }, [survivalModeEnabled]);
+
+  const toggleAutoDeload = useCallback(async () => {
+    const next = !autoDeloadEnabled;
+    setAutoDeloadEnabled(next);
+    try { await AsyncStorage.setItem(STORAGE_AUTO_DELOAD, String(next)); } catch {}
+  }, [autoDeloadEnabled]);
+
+  const updateExerciseRecord = useCallback(async (exerciseName, oneRM, meta = {}) => {
+    const key = normExerciseName(exerciseName);
+    if (!key || !oneRM) return;
+    setExerciseRecords((prev) => {
+      const next = {
+        ...prev,
+        [key]: {
+          exerciseName,
+          oneRM: parseFloat(oneRM),
+          updatedAt: new Date().toISOString(),
+          ...meta,
+        },
+      };
+      AsyncStorage.setItem(STORAGE_EX_RECORDS, JSON.stringify(next)).catch(() => {});
       return next;
     });
   }, []);
@@ -163,7 +233,13 @@ export function WorkoutProvider({ children }) {
       activeWorkout, customPlans, workoutHistory,
       minimizeWorkout, clearActiveWorkout, addCustomPlan, deleteCustomPlan, updateCustomPlan, saveWorkoutToHistory,
       useRIR, toggleRIR,
+      rampEnabled, toggleRamp,
+      audioAssistantMode, cycleAudioAssistant,
       hiddenBuiltins, hideBuiltin, restoreBuiltin,
+      survivalModeEnabled, toggleSurvivalMode,
+      autoDeloadEnabled, toggleAutoDeload,
+      exerciseRecords, updateExerciseRecord,
+      hydrated,
     }}>
       {children}
     </WorkoutContext.Provider>

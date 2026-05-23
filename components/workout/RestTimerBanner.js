@@ -20,7 +20,7 @@ const RestTimerBanner = ({ label, duration, onDismiss, onRemainingChange }) => {
     if (remaining <= 0 && !dismissedRef.current) {
       dismissedRef.current = true;
       clearInterval(intervalRef.current);
-      onDismiss?.();
+      onDismiss?.({ natural: true });
     }
     return remaining;
   }, [onDismiss, onRemainingChange]);
@@ -51,7 +51,7 @@ const RestTimerBanner = ({ label, duration, onDismiss, onRemainingChange }) => {
   const handleSkip = () => {
     dismissedRef.current = true;
     clearInterval(intervalRef.current);
-    onDismiss?.();
+    onDismiss?.({ natural: false });
   };
 
   const addTime = (deltaSec) => {

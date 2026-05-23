@@ -27,12 +27,12 @@
 
 ### Config / Feature Flags (Opcjonalne Moduły)
 - [x] **RPE do RIR Translator**: Globalny przełącznik w Profilu → Ustawienia zmieniający skalę intensywności z RPE (6–10) na RIR (powtórzenia w zapasie). Zapamiętany w AsyncStorage.
-- [ ] **Pogodowy Modyfikator Nawodnienia**: Integracja z API pogodowym, automatycznie podbijająca dobowy cel wody o 750 ml w upalne dni.
-- [ ] **Autoregulacja Rozgrzewki (RAMP)**: Automatyczne kalkulowanie i dodawanie serii rozgrzewkowych przed głównymi bojami wielostawowymi.
-- [ ] **Audio-Asystent w słuchawkach**: Lektor czytający w tle komunikaty o końcu przerwy oraz motywujący w trakcie serii.
+- [x] **Pogodowy Modyfikator Nawodnienia**: Skalowany cel wody wg temperatury (od 12°C) i wilgotności — np. 20°C ≈ +500 ml, 25°C ≈ +750 ml. Open-Meteo + DietContext.
+- [x] **Autoregulacja Rozgrzewki (RAMP)**: Inteligentny protokół dla każdego ćwiczenia (wielostaw/izolacja/kalistenika/guma) — podgląd w menu ⋯ + ręczne dodanie serii.
+- [x] **Audio-Asystent w słuchawkach**: 3 tryby (OFF / Głos+tyk / Tylko tyk). Odliczanie 5→2 s; na końcu fanfara (3× tyk) + opcjonalnie głos.
 - [ ] **Tryb "Przetrwania" (Exam/Stress Mode)**: Agresywne ucięcie objętości zaplanowanego treningu o 40% w dniach o wysokim poziomie zmęczenia.
 - [ ] **Auto-Deload (Wykrywacz Płaskowyżu)**: Algorytm monitorujący progresję, wymuszający okres roztrenowania (-15% obciążenia) przy braku postępów.
-
+- [ ] **Moduł w Narzędziach - Kreator Prób Maksymalnych (1RM Wizard):** Implementacja samodzielnego kreatora w zakładce Narzędzia. System ma umożliwiać wybór ćwiczenia z bazy, pobranie i wyraźne wyświetlenie w interfejsie aktualnego rekordu (1RM) użytkownika, zdefiniowanie nowego celu i automatyczne wygenerowanie dedykowanego protokołu podejść (rozgrzewka + próba główna) wraz z bezpośrednią aktualizacją rekordu w profilu po zatwierdzeniu sukcesu.
 ### Dieta i Nawodnienie
 - [ ] **Kreator Przepisów**: Możliwość tworzenia, wyliczania makro i trwałego zapisywania własnych, unikalnych posiłków.
 - [ ] **Szybkie Kopiowanie**: Przenoszenie całych posiłków lub pełnych dni z przeszłości do bieżącego widoku jednym kliknięciem.

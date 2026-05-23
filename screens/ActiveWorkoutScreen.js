@@ -54,6 +54,11 @@ import {
   cancelAllWorkoutNotifications,
 } from '../components/workout/WorkoutNotificationService';
 import { normalizeExecutionSet, repsForVolume } from '../utils/repsUtils';
+import {
+  applySurvivalMode,
+  applyAutoDeload,
+  detectExercisePlateaus,
+} from '../utils/trainingIntelligence';
 
 const GYM_KEYWORDS = [
   'kg','kilo','powt','rep','rpe','rir','zapas','seri','max','maksa','pr','rekord',
@@ -876,12 +881,11 @@ const ExerciseCard = memo(function ExerciseCard({
   const rampAlreadyApplied = exercise.sets.some((s) => s.isRamp);
   const rampPlan = useMemo(
     () => getRampRecommendation(exercise, { overrideWorkingKg: rampKgOverride }),
-    [exercise, rampKgOverride],
+    [exercise.sets, exercise.name, exercise.loadMode, exercise.muscles, exercise.sourcePlanExId, rampKgOverride],
   );
 
   const openRampModal = () => {
     setRampKgOverride(null);
-    setActionsModal(false);
     setRampModalVisible(true);
   };
 
@@ -1401,6 +1405,7 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
     activeWorkout, customPlans, minimizeWorkout, saveWorkoutToHistory,
     clearActiveWorkout, updateCustomPlan,
     rampEnabled, audioAssistantMode,
+    autoDeloadEnabled, workoutHistory,
   } = useWorkoutContext();
   const { colors } = useTheme();
   const { width: winW, height: winH } = useWindowDimensions();
@@ -1422,14 +1427,40 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   const customExercises    = route?.params?.customExercises;
   const initialSSGroups    = route?.params?.supersetGroups ?? {};
   const customPlanId       = route?.params?.customPlanId ?? null;
+  const survivalMode       = route?.params?.survivalMode ?? false;
 
-  const initialExercises = useMemo(() => {
+  const { initialExercises, workoutIntel } = useMemo(() => {
+    let base;
     if (activeWorkout?.exercises?.length > 0) {
-      return activeWorkout.exercises.map(normalizeExerciseSets);
+      base = activeWorkout.exercises.map(normalizeExerciseSets);
+    } else if (customExercises?.length > 0) {
+      base = customExercises.map(convertLibraryExercise);
+    } else if (templateId === 'lower') {
+      base = LOWER_EXERCISES();
+    } else {
+      base = UPPER_EXERCISES();
     }
-    if (customExercises?.length > 0) return customExercises.map(convertLibraryExercise);
-    if (templateId === 'lower') return LOWER_EXERCISES();
-    return UPPER_EXERCISES();
+
+    const intel = { survival: null, deload: null, plateaus: [] };
+    let ex = base;
+
+    if (survivalMode && !activeWorkout?.exercises?.length) {
+      const result = applySurvivalMode(ex);
+      ex = result.exercises;
+      intel.survival = result;
+    }
+
+    if (autoDeloadEnabled && !activeWorkout?.exercises?.length) {
+      const plateaus = detectExercisePlateaus(workoutHistory);
+      if (plateaus.length) {
+        const result = applyAutoDeload(ex, plateaus.map((p) => p.key));
+        ex = result.exercises;
+        intel.deload = result;
+        intel.plateaus = plateaus;
+      }
+    }
+
+    return { initialExercises: ex, workoutIntel: intel };
   }, []);
 
   const initialTimerSec = activeWorkout?.timerSec ?? 0;
@@ -1473,6 +1504,9 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   const [selectedWeightForCalc, setSelectedWeightForCalc] = useState(0);
   const [customExModalVisible, setCustomExModalVisible]   = useState(false);
   const [sessionNote, setSessionNote]                     = useState('');
+  const [intelDismissed, setIntelDismissed]               = useState(false);
+
+  const showIntelBanner = !intelDismissed && (workoutIntel.survival || workoutIntel.deload);
 
   // ZADANIE 1: InteractionManager – lista renderowana po zakończeniu animacji wejścia
   const [isReady, setIsReady] = useState(false);
@@ -1553,7 +1587,7 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   const showRestBanner = useCallback((label, duration) => {
     const newKey = Date.now();
     restSessionKeyRef.current = newKey;
-    resetRestAudioSession(newKey);
+    resetRestAudioSession();
     setRestLabel(label);
     setRestDuration(duration);
     setRestKey(newKey);

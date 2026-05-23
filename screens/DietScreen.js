@@ -2,6 +2,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
+import { useDietContext } from '../context/DietContext';
 
 // ─── Stałe konfiguracyjne ────────────────────────────────────────────────────
 
@@ -16,9 +17,7 @@ const MACRO_RANGES = {
   carbs:   { min: 200, max: 230, eaten: 130, color: '#378ADD' },
 };
 
-const PORTION_ML     = 250;
-const WATER_GOAL_ML  = 2500;
-const WATER_PORTIONS = WATER_GOAL_ML / PORTION_ML;
+const PORTION_ML = 250;
 
 const MEALS = [
   { id: '1', name: 'Śniadanie',        emoji: '🌅', iconBg: 'rgba(255, 179,  71, 0.15)' },
@@ -38,8 +37,10 @@ const generateWeekDays = () => {
     const dayName = isToday
       ? 'Dzisiaj'
       : date.toLocaleDateString('pl-PL', { weekday: 'short' });
+    const dateKey = date.toISOString().slice(0, 10);
     return {
       id: String(i - 2),
+      dateKey,
       dayName: dayName.charAt(0).toUpperCase() + dayName.slice(1),
       dayNum: date.getDate(),
       isToday,
@@ -102,18 +103,24 @@ const bottleStyles = StyleSheet.create({
 
 // ─── Główny komponent ekranu ─────────────────────────────────────────────────
 export default function DietScreen() {
-  const [filledPortions, setFilledPortions] = useState(0);
-  const [activeDayId, setActiveDayId]       = useState('0');
+  const [activeDayId, setActiveDayId] = useState('0');
   const { colors } = useTheme();
+  const {
+    effectiveGoalMl, maxPortions, portionMl,
+    getPortionsForDate, addWaterPortion,
+    weatherBoostActive, weatherLabel, weatherHumidity, weatherLoading,
+  } = useDietContext();
   const styles = makeStyles(colors);
 
   const weekDays    = generateWeekDays();
+  const activeDay   = weekDays.find((d) => d.id === activeDayId) ?? weekDays[2];
+  const filledPortions = getPortionsForDate(activeDay.dateKey);
   const remaining   = DAILY_GOAL_KCAL - EATEN_KCAL;
   const kcalPercent = Math.min((EATEN_KCAL / DAILY_GOAL_KCAL) * 100, 100);
-  const waterMl     = filledPortions * PORTION_ML;
+  const waterMl     = filledPortions * portionMl;
 
   const handleAddWater = () => {
-    setFilledPortions((prev) => Math.min(prev + 1, WATER_PORTIONS));
+    addWaterPortion(activeDay.dateKey);
   };
 
   return (
@@ -189,8 +196,17 @@ export default function DietScreen() {
             <View>
               <Text style={styles.waterTitle}>Nawodnienie</Text>
               <Text style={styles.waterSub}>
-                {waterMl.toLocaleString('pl-PL')} / {WATER_GOAL_ML.toLocaleString('pl-PL')} ml
+                {waterMl.toLocaleString('pl-PL')} / {effectiveGoalMl.toLocaleString('pl-PL')} ml
               </Text>
+              {weatherBoostActive && activeDay.isToday && weatherLabel && (
+                <Text style={[styles.waterHotBadge, { color: colors.water }]}>
+                  {weatherLabel}
+                  {weatherHumidity != null && weatherHumidity > 65 ? ` · wilg. ${Math.round(weatherHumidity)}%` : ''}
+                </Text>
+              )}
+              {weatherLoading && activeDay.isToday && (
+                <Text style={styles.waterLoading}>Sprawdzam pogodę…</Text>
+              )}
             </View>
           </View>
 
@@ -198,24 +214,28 @@ export default function DietScreen() {
             style={styles.waterAddButton}
             onPress={handleAddWater}
             activeOpacity={0.7}
-            disabled={filledPortions >= WATER_PORTIONS}
+            disabled={filledPortions >= maxPortions}
           >
             <Text style={[
               styles.waterAddTop,
-              filledPortions >= WATER_PORTIONS && styles.waterAddDisabled,
+              filledPortions >= maxPortions && styles.waterAddDisabled,
             ]}>+250</Text>
             <Text style={[
               styles.waterAddSub,
-              filledPortions >= WATER_PORTIONS && styles.waterAddDisabled,
+              filledPortions >= maxPortions && styles.waterAddDisabled,
             ]}>ml</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.bottlesRow}>
-          {Array.from({ length: WATER_PORTIONS }, (_, index) => (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.bottlesRow}
+        >
+          {Array.from({ length: maxPortions }, (_, index) => (
             <WaterBottle key={index} filled={index < filledPortions} waterColor={colors.water} />
           ))}
-        </View>
+        </ScrollView>
       </View>
 
       {/* Lista posiłków */}
@@ -298,11 +318,13 @@ const makeStyles = (c) => StyleSheet.create({
   waterIconWrapper:{ width: 36, height: 36, borderRadius: 11, backgroundColor: c.waterSoft, justifyContent: 'center', alignItems: 'center' },
   waterTitle:      { fontSize: 15, fontWeight: '600', color: c.textPrimary },
   waterSub:        { fontSize: 12, color: c.textSecondary, marginTop: 2 },
+  waterHotBadge:   { fontSize: 11, fontWeight: '600', marginTop: 3 },
+  waterLoading:    { fontSize: 10, color: c.textTertiary, marginTop: 2 },
   waterAddButton:  { backgroundColor: c.waterSoft, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center' },
   waterAddTop:     { fontSize: 15, fontWeight: '700', color: c.water },
   waterAddSub:     { fontSize: 11, color: c.water, opacity: 0.7 },
   waterAddDisabled:{ color: c.borderMuted },
-  bottlesRow:      { flexDirection: 'row', justifyContent: 'space-between' },
+  bottlesRow:      { flexDirection: 'row', gap: 6, paddingVertical: 2 },
 
   sectionTitle: {
     fontSize: 20, fontWeight: '600', color: c.textPrimary,

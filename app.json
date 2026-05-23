@@ -14,11 +14,12 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSUserNotificationUsageDescription": "Powiadomienia o końcu przerwy i postępie treningu."
+        "NSUserNotificationUsageDescription": "Powiadomienia o końcu przerwy i postępie treningu.",
+        "NSLocationWhenInUseUsageDescription": "Lokalizacja służy do dostosowania dziennego celu nawodnienia w upalne dni."
       }
     },
     "android": {
-      "permissions": ["RECEIVE_BOOT_COMPLETED", "VIBRATE"],
+      "permissions": ["RECEIVE_BOOT_COMPLETED", "VIBRATE", "ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

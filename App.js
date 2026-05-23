@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { WorkoutProvider }        from './context/WorkoutContext';
 import { ThemeProvider }          from './context/ThemeContext';
 import { ProfileGoalsProvider }   from './context/ProfileGoalsContext';
+import { DietProvider }           from './context/DietContext';
 import { useTheme }               from './context/ThemeContext';
 import OnboardingScreen           from './screens/OnboardingScreen';
 import TrainingScreen             from './screens/TrainingScreen';
@@ -92,8 +93,10 @@ export default function App() {
     <WorkoutProvider>
       <ThemeProvider>
         <ProfileGoalsProvider>
-          <AppNavigator />
-          <OnboardingScreen />
+          <DietProvider>
+            <AppNavigator />
+            <OnboardingScreen />
+          </DietProvider>
         </ProfileGoalsProvider>
       </ThemeProvider>
     </WorkoutProvider>

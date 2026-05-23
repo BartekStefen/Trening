@@ -9,7 +9,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { useWorkoutContext } from '../context/WorkoutContext';
+import { getAudioModeShort, AUDIO_MODES } from '../utils/audioAssistantConstants';
 import { useTheme } from '../context/ThemeContext';
+import { useDietContext } from '../context/DietContext';
 import VolumeChart from '../components/profile/VolumeChart';
 import AnalyticsDashboard from '../components/profile/AnalyticsDashboard';
 import { SectionHeader } from '../components/profile/CardHeader';
@@ -182,7 +184,8 @@ const pickerStyles = StyleSheet.create({
 export default function ProfileScreen({ navigation }) {
   const [habits, setHabits]           = useState(INITIAL_HABITS);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
-  const { workoutHistory, useRIR, toggleRIR } = useWorkoutContext();
+  const { workoutHistory, useRIR, toggleRIR, rampEnabled, toggleRamp, audioAssistantMode, cycleAudioAssistant } = useWorkoutContext();
+  const { weatherEnabled, toggleWeatherModifier } = useDietContext();
   const { colors, themes, themeId }   = useTheme();
 
   const styles = makeStyles(colors);
@@ -326,6 +329,87 @@ export default function ProfileScreen({ navigation }) {
           <View style={[styles.rirToggle, { backgroundColor: useRIR ? '#00E676' : colors.border }]}>
             <Text style={[styles.rirToggleText, { color: useRIR ? '#000' : colors.textSecondary }]}>
               {useRIR ? 'RIR' : 'RPE'}
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* Autoregulacja rozgrzewki RAMP */}
+        <TouchableOpacity
+          style={styles.settingCard}
+          activeOpacity={0.7}
+          onPress={toggleRamp}
+        >
+          <View style={styles.settingLeft}>
+            <View style={[styles.settingIconWrapper, { backgroundColor: rampEnabled ? 'rgba(239,159,39,0.18)' : colors.border }]}>
+              <Ionicons name="flame" size={20} color={rampEnabled ? '#EF9F27' : colors.textSecondary} />
+            </View>
+            <View>
+              <Text style={styles.settingName}>Rozgrzewka RAMP</Text>
+              <Text style={[styles.settingDesc, { color: colors.textSecondary }]}>
+                {rampEnabled ? 'Menu ⋯ → podgląd i dodanie serii rozgrzewkowych' : 'Wyłączone'}
+              </Text>
+            </View>
+          </View>
+          <View style={[styles.rirToggle, { backgroundColor: rampEnabled ? '#EF9F27' : colors.border }]}>
+            <Text style={[styles.rirToggleText, { color: rampEnabled ? '#000' : colors.textSecondary }]}>
+              {rampEnabled ? 'ON' : 'OFF'}
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* Audio-asystent w słuchawkach */}
+        <TouchableOpacity
+          style={styles.settingCard}
+          activeOpacity={0.7}
+          onPress={cycleAudioAssistant}
+        >
+          <View style={styles.settingLeft}>
+            <View style={[styles.settingIconWrapper, { backgroundColor: audioAssistantMode !== AUDIO_MODES.OFF ? 'rgba(55,138,221,0.18)' : colors.border }]}>
+              <Ionicons name="headset-outline" size={20} color={audioAssistantMode !== AUDIO_MODES.OFF ? '#378ADD' : colors.textSecondary} />
+            </View>
+            <View>
+              <Text style={styles.settingName}>Audio-asystent</Text>
+              <Text style={[styles.settingDesc, { color: colors.textSecondary }]}>
+                {audioAssistantMode === AUDIO_MODES.VOICE && 'Tykanie 5→2 s, fanfara + „Koniec przerwy. Kolejna seria.”'}
+                {audioAssistantMode === AUDIO_MODES.TICK && 'Tykanie 5→2 s, potem głośna fanfara (3× tyk)'}
+                {audioAssistantMode === AUDIO_MODES.OFF && 'Wyłączony — kliknij, aby zmienić tryb'}
+              </Text>
+            </View>
+          </View>
+          <View style={[styles.rirToggle, {
+            backgroundColor: audioAssistantMode === AUDIO_MODES.VOICE ? '#378ADD'
+              : audioAssistantMode === AUDIO_MODES.TICK ? '#EF9F27'
+              : colors.border,
+            minWidth: 52,
+          }]}>
+            <Text style={[styles.rirToggleText, {
+              color: audioAssistantMode !== AUDIO_MODES.OFF ? '#FFF' : colors.textSecondary,
+            }]}>
+              {getAudioModeShort(audioAssistantMode)}
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* Modyfikator pogodowy nawodnienia */}
+        <TouchableOpacity
+          style={styles.settingCard}
+          activeOpacity={0.7}
+          onPress={toggleWeatherModifier}
+        >
+          <View style={styles.settingLeft}>
+            <View style={[styles.settingIconWrapper, { backgroundColor: weatherEnabled ? 'rgba(0,230,118,0.15)' : colors.border }]}>
+              <Ionicons name="sunny-outline" size={20} color={weatherEnabled ? '#00E676' : colors.textSecondary} />
+            </View>
+            <View>
+              <Text style={styles.settingName}>Modyfikator pogodowy</Text>
+              <Text style={[styles.settingDesc, { color: colors.textSecondary }]}>
+                {weatherEnabled ? 'Inteligentny cel wody wg temperatury i wilgotności' : 'Wyłączony'}
+              </Text>
+            </View>
+          </View>
+          <View style={[styles.rirToggle, { backgroundColor: weatherEnabled ? '#00E676' : colors.border }]}>
+            <Text style={[styles.rirToggleText, { color: weatherEnabled ? '#000' : colors.textSecondary }]}>
+              {weatherEnabled ? 'ON' : 'OFF'}
             </Text>
           </View>
         </TouchableOpacity>

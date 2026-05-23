@@ -1,4 +1,4 @@
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 const LOAD_MODE_LABELS = {
@@ -19,6 +19,8 @@ const ExerciseActionsModal = ({
   onToggleSuperset,
   onMachineSettings,
   onLoadMode,
+  onRampWarmup,
+  rampAlreadyApplied,
   dropSetLimitReached,
   isInSuperset,
   currentLoadMode,
@@ -29,7 +31,8 @@ const ExerciseActionsModal = ({
     transparent
     onRequestClose={onClose}
   >
-    <TouchableOpacity style={s.backdrop} activeOpacity={1} onPress={onClose}>
+    <View style={s.backdrop}>
+      <Pressable style={s.backdropPress} onPress={onClose} />
       <View style={s.sheet}>
         <View style={s.handle} />
         <Text style={s.title} numberOfLines={1}>{exerciseName}</Text>
@@ -110,6 +113,27 @@ const ExerciseActionsModal = ({
           </TouchableOpacity>
         )}
 
+        {onRampWarmup && (
+          <TouchableOpacity
+            style={s.row}
+            onPress={() => { onClose(); onRampWarmup(); }}
+            activeOpacity={0.7}
+          >
+            <View style={[s.iconBox, { backgroundColor: 'rgba(239,159,39,0.15)' }]}>
+              <Ionicons name="flame-outline" size={20} color="#EF9F27" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.rowLabel}>Rozgrzewka RAMP</Text>
+              <Text style={s.limitText}>
+                {rampAlreadyApplied
+                  ? 'Podgląd dodanych serii rozgrzewkowych'
+                  : 'Podgląd i dodanie serii według protokołu'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="#3A3A3C" />
+          </TouchableOpacity>
+        )}
+
         <View style={s.divider} />
 
         <TouchableOpacity style={s.row} onPress={onDelete} activeOpacity={0.7}>
@@ -124,7 +148,7 @@ const ExerciseActionsModal = ({
           <Text style={s.cancelText}>Anuluj</Text>
         </TouchableOpacity>
       </View>
-    </TouchableOpacity>
+    </View>
   </Modal>
 );
 
@@ -133,6 +157,9 @@ const s = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'flex-end',
+  },
+  backdropPress: {
+    ...StyleSheet.absoluteFillObject,
   },
   sheet: {
     backgroundColor: '#1C1C1E',
