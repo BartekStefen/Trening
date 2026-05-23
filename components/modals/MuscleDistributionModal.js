@@ -4,24 +4,74 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import LiveMuscleMap from '../LiveMuscleMap';
-import { MUSCLE_GROUPS, INTENSITY_CAPS } from '../../constants/muscleConstants';
+import { INTENSITY_CAPS } from '../../constants/muscleConstants';
+
+// ─── Grupy sekcji ─────────────────────────────────────────────────────────────
+const SECTIONS = [
+  {
+    title: 'Górna część ciała',
+    muscles: [
+      { key: 'chest_upper',     label: 'Klatka – góra' },
+      { key: 'chest_lower',     label: 'Klatka – dół' },
+      { key: 'back_lat',        label: 'Plecy (najszerszy)' },
+      { key: 'back_upper',      label: 'Plecy górne (trapez)' },
+    ],
+  },
+  {
+    title: 'Ramiona & barki',
+    muscles: [
+      { key: 'shoulders_front', label: 'Bark – przód' },
+      { key: 'shoulders_side',  label: 'Bark – bok' },
+      { key: 'shoulders_rear',  label: 'Bark – tył' },
+      { key: 'biceps',          label: 'Biceps' },
+      { key: 'triceps',         label: 'Triceps' },
+      { key: 'forearms',        label: 'Przedramiona' },
+    ],
+  },
+  {
+    title: 'Rdzeń',
+    muscles: [
+      { key: 'abs',             label: 'Brzuch' },
+    ],
+  },
+  {
+    title: 'Dolna część ciała',
+    muscles: [
+      { key: 'glutes',          label: 'Pośladki' },
+      { key: 'quads',           label: 'Czworogłowy' },
+      { key: 'hamstrings',      label: 'Dwugłowy uda' },
+      { key: 'calves',          label: 'Łydki' },
+    ],
+  },
+];
+
+// Kolor odpowiadający intensywności SVG (5 stopni)
+const intensityToColor = (v) => {
+  if (v <= 0)    return null;          // nieaktywna
+  if (v < 0.25)  return '#7B1B1B';    // niska
+  if (v < 0.55)  return '#D32F2F';    // średnia
+  if (v < 0.85)  return '#FF3D00';    // wysoka
+  return           '#FF6E40';          // szczyt
+};
 
 // ─── MuscleDistributionModal ──────────────────────────────────────────────────
-// Widok inspirowany Hevy: duże sylwetki SVG + czysta tabela serii per partia.
-//
-// Props:
-//   isVisible – boolean
-//   heatmap   – { [region]: 0.0–1.0 } z useMuscleHeatmap
-//   onClose() – callback zamknięcia
 const MuscleDistributionModal = ({ isVisible, heatmap, onClose }) => {
-  // Przybliżona liczba zaliczonych serii (odwrotna normalizacja przez INTENSITY_CAPS)
-  const setCounts = useMemo(() => {
+  const { setCounts, totalSets, activeCount } = useMemo(() => {
     const counts = {};
-    MUSCLE_GROUPS.forEach(({ key }) => {
-      const intensity = heatmap?.[key] ?? 0;
-      counts[key] = Math.round(intensity * (INTENSITY_CAPS[key] ?? 5));
+    let total = 0;
+    let active = 0;
+
+    SECTIONS.forEach(({ muscles }) => {
+      muscles.forEach(({ key }) => {
+        const intensity = heatmap?.[key] ?? 0;
+        const n = Math.round(intensity * (INTENSITY_CAPS[key] ?? 5));
+        counts[key] = n;
+        total += n;
+        if (n > 0) active++;
+      });
     });
-    return counts;
+
+    return { setCounts: counts, totalSets: total, activeCount: active };
   }, [heatmap]);
 
   return (
@@ -49,32 +99,61 @@ const MuscleDistributionModal = ({ isVisible, heatmap, onClose }) => {
         >
           {/* Sylwetki SVG */}
           <View style={styles.mapContainer}>
-            <LiveMuscleMap heatmap={heatmap} scale={1.35} />
+            <LiveMuscleMap heatmap={heatmap} scale={0.9} />
           </View>
 
-          {/* Nagłówek tabeli */}
-          <View style={styles.tableHeader}>
-            <Text style={styles.tableHeaderLabel}>Mięsień</Text>
-            <Text style={styles.tableHeaderLabel}>Zaliczone Serie</Text>
+          {/* Pasek statystyk */}
+          <View style={styles.statsRow}>
+            <View style={styles.statChip}>
+              <Text style={styles.statValue}>{activeCount}</Text>
+              <Text style={styles.statLabel}>aktywnych</Text>
+            </View>
+            <View style={styles.statDot} />
+            <View style={styles.statChip}>
+              <Text style={styles.statValue}>{totalSets}</Text>
+              <Text style={styles.statLabel}>serii łącznie</Text>
+            </View>
           </View>
-          <View style={styles.tableDivider} />
 
-          {/* Wiersze mięśni */}
-          {MUSCLE_GROUPS.map(({ key, label }, idx) => {
-            const count = setCounts[key] ?? 0;
-            const isLast = idx === MUSCLE_GROUPS.length - 1;
-            return (
-              <View key={key}>
-                <View style={styles.muscleRow}>
-                  <Text style={styles.muscleName}>{label}</Text>
-                  <Text style={[styles.muscleCount, count > 0 && styles.muscleCountActive]}>
-                    {count}
-                  </Text>
-                </View>
-                {!isLast && <View style={styles.rowDivider} />}
+          {/* Sekcje */}
+          {SECTIONS.map((section) => (
+            <View key={section.title} style={styles.section}>
+              <Text style={styles.sectionTitle}>{section.title.toUpperCase()}</Text>
+
+              <View style={styles.card}>
+                {section.muscles.map(({ key, label }, idx) => {
+                  const count     = setCounts[key] ?? 0;
+                  const intensity = heatmap?.[key] ?? 0;
+                  const color     = intensityToColor(intensity);
+                  const isLast    = idx === section.muscles.length - 1;
+
+                  return (
+                    <View key={key}>
+                      <View style={[styles.muscleRow, color && styles.muscleRowActive]}>
+                        {/* Wskaźnik intensywności */}
+                        <View
+                          style={[
+                            styles.indicator,
+                            { backgroundColor: color ?? '#2C2C2E' },
+                          ]}
+                        />
+
+                        <Text style={[styles.muscleName, color && styles.muscleNameActive]}>
+                          {label}
+                        </Text>
+
+                        <Text style={[styles.muscleCount, color && { color }]}>
+                          {count}
+                        </Text>
+                      </View>
+
+                      {!isLast && <View style={styles.rowDivider} />}
+                    </View>
+                  );
+                })}
               </View>
-            );
-          })}
+            </View>
+          ))}
 
           <View style={styles.bottomPad} />
         </ScrollView>
@@ -125,62 +204,114 @@ const styles = StyleSheet.create({
   },
 
   scroll: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
 
   mapContainer: {
     alignItems: 'center',
-    paddingVertical: 16,
-    marginBottom: 8,
+    paddingVertical: 12,
+    marginBottom: 4,
   },
 
-  tableHeader: {
+  // ── Statystyki ──────────────────────────────────────────────────────────────
+  statsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    marginBottom: 20,
+    paddingVertical: 10,
+    backgroundColor: '#161616',
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#2C2C2E',
   },
-  tableHeaderLabel: {
-    fontSize: 12,
-    fontWeight: '500',
+  statChip: {
+    alignItems: 'center',
+    gap: 1,
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  statLabel: {
+    fontSize: 11,
     color: '#636366',
-    letterSpacing: 0.2,
+    fontWeight: '400',
   },
-  tableDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: '#2C2C2E',
-    marginBottom: 2,
+  statDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#3A3A3C',
+  },
+
+  // ── Sekcje ──────────────────────────────────────────────────────────────────
+  section: {
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#48484A',
+    letterSpacing: 1.0,
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+
+  card: {
+    backgroundColor: '#161616',
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#2C2C2E',
+    overflow: 'hidden',
   },
 
   muscleRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 4,
+    paddingVertical: 13,
+    paddingRight: 16,
+    gap: 12,
   },
+  muscleRowActive: {
+    backgroundColor: 'rgba(255,62,0,0.04)',
+  },
+
+  indicator: {
+    width: 3,
+    height: 28,
+    borderTopRightRadius: 2,
+    borderBottomRightRadius: 2,
+  },
+
   muscleName: {
-    fontSize: 15,
-    color: '#FFFFFF',
-    fontWeight: '400',
-  },
-  muscleCount: {
+    flex: 1,
     fontSize: 15,
     color: '#8E8E93',
-    fontWeight: '500',
+    fontWeight: '400',
   },
-  muscleCountActive: {
+  muscleNameActive: {
     color: '#FFFFFF',
+  },
+
+  muscleCount: {
+    fontSize: 15,
+    color: '#3A3A3C',
+    fontWeight: '600',
+    minWidth: 20,
+    textAlign: 'right',
   },
 
   rowDivider: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: '#1C1C1E',
-    marginHorizontal: 4,
+    marginLeft: 19,
   },
 
   bottomPad: {
-    height: 40,
+    height: 48,
   },
 });
 

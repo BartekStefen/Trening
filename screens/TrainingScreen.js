@@ -1,4 +1,4 @@
-import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useWorkoutContext } from '../context/WorkoutContext';
 import { useTheme } from '../context/ThemeContext';
@@ -13,31 +13,49 @@ const formatTime = (s) =>
     .map((v) => String(v).padStart(2, '0')).join(':');
 
 export default function TrainingScreen({ navigation }) {
-  const { activeWorkout, customPlans } = useWorkoutContext();
+  const { activeWorkout, customPlans, deleteCustomPlan } = useWorkoutContext();
   const { colors } = useTheme();
   const styles = makeStyles(colors);
 
   const allTemplates = [
     ...BUILTIN_TEMPLATES,
     ...customPlans.map((p) => ({
-      id:        p.id,
-      tag:       'Mój plan',
-      title:     p.name,
-      meta:      `${p.exercises?.length ?? 0} ćwiczeń`,
-      custom:    true,
-      exercises: p.exercises,
+      id:              p.id,
+      tag:             'Mój plan',
+      title:           p.name,
+      meta:            `${p.exercises?.length ?? 0} ćwiczeń`,
+      custom:          true,
+      exercises:       p.exercises,
+      supersetGroups:  p.supersetGroups ?? {},
+      supersetConfigs: p.supersetConfigs ?? {},
     })),
   ];
+
+  const confirmDeletePlan = (planId, planName) => {
+    Alert.alert(
+      'Usuń plan?',
+      `Czy na pewno chcesz usunąć\n„${planName}"?`,
+      [
+        { text: 'Anuluj', style: 'cancel' },
+        { text: 'Usuń', style: 'destructive', onPress: () => deleteCustomPlan(planId) },
+      ],
+    );
+  };
 
   const renderTemplate = ({ item }) => (
     <TouchableOpacity
       style={[styles.card, item.custom && styles.cardCustom]}
       activeOpacity={0.7}
       onPress={() => navigation.navigate('ActiveWorkout', {
-        templateId:      item.id,
-        templateName:    item.title,
-        customExercises: item.exercises ?? null,
+        templateId:       item.id,
+        templateName:     item.title,
+        customExercises:  item.exercises ?? null,
+        supersetGroups:   item.supersetGroups  ?? {},
+        supersetConfigs:  item.supersetConfigs ?? {},
+        customPlanId:     item.custom ? item.id : null,
       })}
+      onLongPress={item.custom ? () => confirmDeletePlan(item.id, item.title) : undefined}
+      delayLongPress={600}
     >
       <View style={styles.cardContent}>
         <View style={[styles.tagWrapper, item.custom && styles.tagWrapperCustom]}>
@@ -46,7 +64,12 @@ export default function TrainingScreen({ navigation }) {
         <Text style={styles.cardTitle}>{item.title}</Text>
         <Text style={styles.cardMeta}>{item.meta}</Text>
       </View>
-      <Ionicons name="chevron-forward" size={20} color={colors.borderMuted} />
+      <View style={{ alignItems: 'center', gap: 4 }}>
+        <Ionicons name="chevron-forward" size={20} color={colors.borderMuted} />
+        {item.custom && (
+          <Text style={{ fontSize: 9, color: colors.textTertiary }}>przytrzymaj = usuń</Text>
+        )}
+      </View>
     </TouchableOpacity>
   );
 

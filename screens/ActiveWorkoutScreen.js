@@ -6,7 +6,7 @@ import {
 import {
   Alert, Animated, Image, InteractionManager, Keyboard, KeyboardAvoidingView,
   Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity,
-  View,
+  useWindowDimensions, View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useWorkoutContext } from '../context/WorkoutContext';
@@ -25,7 +25,11 @@ import ExerciseHistoryModal    from '../components/workout/ExerciseHistoryModal'
 import AddCustomExerciseModal  from '../components/workout/AddCustomExerciseModal';
 import ExerciseActionsModal    from '../components/modals/ExerciseActionsModal';
 import MachineSettingsModal   from '../components/workout/MachineSettingsModal';
+import LoadModeModal, { LOAD_MODES } from '../components/workout/LoadModeModal';
+import SetTypeButton, { resolveSetType, cycleSetType } from '../components/workout/SetTypeButton';
 import useMuscleHeatmap       from '../hooks/useMuscleHeatmap';
+import useBodyWeight          from '../hooks/useBodyWeight';
+import LiveMuscleMap          from '../components/LiveMuscleMap';
 
 const GYM_KEYWORDS = [
   'kg','kilo','powt','rep','rpe','rir','zapas','seri','max','maksa','pr','rekord',
@@ -100,19 +104,10 @@ const WorkoutHUD = memo(({ exercises, heatmap, onMuscleMapPress, timerRef, initi
         <TouchableOpacity
           style={hudStyles.muscleCell}
           onPress={onMuscleMapPress}
-          activeOpacity={0.7}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          activeOpacity={0.75}
+          hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
         >
-          <Ionicons
-            name="body-outline"
-            size={22}
-            color={Object.keys(heatmap).length > 0 ? colors.danger : colors.textTertiary}
-          />
-          {Object.keys(heatmap).length > 0 && (
-            <View style={hudStyles.muscleBadge}>
-              <Text style={hudStyles.muscleBadgeText}>{Object.keys(heatmap).length}</Text>
-            </View>
-          )}
+          <LiveMuscleMap heatmap={heatmap} scale={0.13} />
         </TouchableOpacity>
       </View>
     </View>
@@ -133,18 +128,10 @@ const makeHudStyles = (c) => StyleSheet.create({
     paddingVertical: 8,
   },
   cell:       { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2 },
-  muscleCell: { flex: 1, alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  muscleCell: { flex: 1.4, alignItems: 'center', justifyContent: 'center' },
   lbl:        { fontSize: 9, color: c.textSecondary, letterSpacing: 0.3 },
   valWhite:   { fontSize: 13, fontWeight: '700', color: c.textPrimary, fontVariant: ['tabular-nums'] },
   sep:        { width: 0.5, height: 28, backgroundColor: c.border },
-  muscleBadge: {
-    position: 'absolute', top: -6, right: 6,
-    backgroundColor: '#FF5252', borderRadius: 7,
-    minWidth: 14, height: 14,
-    justifyContent: 'center', alignItems: 'center',
-    paddingHorizontal: 3,
-  },
-  muscleBadgeText: { fontSize: 9, fontWeight: '700', color: '#FFFFFF' },
 });
 
 const UPPER_EXERCISES = () => [
@@ -232,22 +219,105 @@ const LOWER_EXERCISES = () => [
   },
 ];
 
-const convertLibraryExercise = (ex, index) => ({
-  id: `custom_${ex.id}_${index}`,
-  name: ex.name,
-  muscleGroup: (ex.muscles ?? []).join(' · '),
-  description: ex.description ?? '',
-  muscles: ex.muscles ?? [],
-  alternatives: ex.alternatives ?? [],
-  image: ex.image ?? null,
-  restDuration: 90,
-  nextTrainingKg: null,
-  sets: [
-    { id: `cs_${ex.id}_1`, prevLog: '—', kg: '', reps: '', rpe: '', done: false, suggested: null, aiSuggested: false },
-    { id: `cs_${ex.id}_2`, prevLog: '—', kg: '', reps: '', rpe: '', done: false, suggested: null, aiSuggested: false },
-    { id: `cs_${ex.id}_3`, prevLog: '—', kg: '', reps: '', rpe: '', done: false, suggested: null, aiSuggested: false },
-  ],
-});
+// ─── Mapa zamienników domowych (exercise id → zamiennik) ─────────────────────
+const HOME_ALTERNATIVES = {
+  ex1: { name: 'Pompki z gumą oporową', muscleGroup: 'Klatka · Triceps · Barki', muscles: ['Klatka piersiowa', 'Triceps', 'Przedni bark'], equipment: 'Gumy oporowe', description: 'Guma przez plecy, chwyt szeroki. Pompki z oporem gumy w fazie koncentrycznej.', image: 'https://via.placeholder.com/40/2C2C2E/636366?text=PP', alternatives: [], restDuration: 90 },
+  ex2: { name: 'Wiosłowanie hantlem', muscleGroup: 'Plecy · Biceps', muscles: ['Najszerszy grzbietu', 'Romboid', 'Biceps'], equipment: 'Hantle', description: 'Oprzyj kolano na sofie. Przyciągaj hantel do biodra, łokieć ku górze.', image: 'https://via.placeholder.com/40/2C2C2E/636366?text=WH', alternatives: [], restDuration: 90 },
+  ex3: { name: 'Wyciskanie hantlami stojąc', muscleGroup: 'Barki · Triceps', muscles: ['Przedni bark', 'Boczny bark', 'Triceps'], equipment: 'Hantle', description: 'Stojąc, wyciskaj hantle synchronicznie nad głowę. Napnij core przez cały ruch.', image: 'https://via.placeholder.com/40/2C2C2E/636366?text=WH', alternatives: [], restDuration: 90 },
+  ex4: { name: 'Biceps Curl z hantlami', muscleGroup: 'Biceps', muscles: ['Biceps'], equipment: 'Hantle', description: 'Stojąc, uginaj naprzemiennie lub oburęcznie. Ramiona przy tułowiu.', image: 'https://via.placeholder.com/40/2C2C2E/636366?text=BC', alternatives: [], restDuration: 60 },
+  ex5: { name: 'Dipy na blacie / krześle', muscleGroup: 'Triceps', muscles: ['Triceps'], equipment: 'Krzesło', description: 'Oprzyj dłonie na twardej krawędzi. Opuszczaj i prostuj ramiona pełnym zakresem.', image: 'https://via.placeholder.com/40/2C2C2E/636366?text=DK', alternatives: [], restDuration: 60 },
+  ex_l1: { name: 'Goblet Squat z hantlem', muscleGroup: 'Czworogłowy · Pośladki', muscles: ['Czworogłowy', 'Pośladki'], equipment: 'Hantle', description: 'Hantel oburącz przy klatce. Głęboki przysiad, kolana nad palcami stóp.', image: 'https://via.placeholder.com/40/2C2C2E/636366?text=GS', alternatives: [], restDuration: 120 },
+  ex_l2: { name: 'Hip Thrust z hantlem na podłodze', muscleGroup: 'Pośladki · Dwugłowy', muscles: ['Pośladki', 'Dwugłowy uda'], equipment: 'Hantle', description: 'Plecy na sofie, hantel na biodrach. Pchnij biodra ku górze do pełnego wyprostu.', image: 'https://via.placeholder.com/40/2C2C2E/636366?text=HH', alternatives: [], restDuration: 90 },
+  c1: { name: 'Pompki z gumą oporową', muscleGroup: 'Klatka · Triceps · Barki', muscles: ['Klatka piersiowa', 'Triceps', 'Przedni bark'], equipment: 'Gumy oporowe', description: 'Guma przez plecy. Chwyt szeroki, pompki z dodatkowym oporem.', image: 'https://via.placeholder.com/40/2C2C2E/636366?text=PP', alternatives: [], restDuration: 90 },
+  c2: { name: 'Pompki na skosie (nogi wyżej)', muscleGroup: 'Górna klatka · Triceps', muscles: ['Górna klatka', 'Triceps'], equipment: 'Krzesło', description: 'Nogi na krześle, dłonie na podłodze. Układ aktywuje górną część klatki.', image: 'https://via.placeholder.com/40/2C2C2E/636366?text=PS', alternatives: [], restDuration: 90 },
+  b1: { name: 'Wiosłowanie hantlem', muscleGroup: 'Plecy · Biceps', muscles: ['Najszerszy grzbietu', 'Romboid', 'Biceps'], equipment: 'Hantle', description: 'Praca jednostronna eliminuje kompensacje. Oprzyj kolano i rękę na ławce lub sofie.', image: 'https://via.placeholder.com/40/2C2C2E/636366?text=WH', alternatives: [], restDuration: 90 },
+  b2: { name: 'Romanian Deadlift z hantlami', muscleGroup: 'Pośladki · Plecy · Dwugłowy', muscles: ['Pośladki', 'Dwugłowy uda', 'Prostowniki pleców'], equipment: 'Hantle', description: 'Hantle przed sobą. Schylaj z płaskim plecami, czujesz rozciągnięcie bicepsów uda.', image: 'https://via.placeholder.com/40/2C2C2E/636366?text=RD', alternatives: [], restDuration: 120 },
+  l1: { name: 'Goblet Squat z hantlem', muscleGroup: 'Czworogłowy · Pośladki', muscles: ['Czworogłowy', 'Pośladki'], equipment: 'Hantle', description: 'Hantel oburącz przy klatce. Głęboki przysiad z pełną kontrolą.', image: 'https://via.placeholder.com/40/2C2C2E/636366?text=GS', alternatives: [], restDuration: 120 },
+  l4: { name: 'Hip Thrust z hantlem', muscleGroup: 'Pośladki · Dwugłowy', muscles: ['Pośladki', 'Dwugłowy uda'], equipment: 'Hantle', description: 'Plecy na sofie, hantel na biodrach. Mocny izometryczny skurcz pośladków w górze.', image: 'https://via.placeholder.com/40/2C2C2E/636366?text=HH', alternatives: [], restDuration: 90 },
+  s1: { name: 'Wyciskanie hantlami stojąc', muscleGroup: 'Barki · Triceps', muscles: ['Przedni bark', 'Boczny bark', 'Triceps'], equipment: 'Hantle', description: 'Stojąc, wyciskaj synchronicznie. Pełny wyprost nad głową.', image: 'https://via.placeholder.com/40/2C2C2E/636366?text=WH', alternatives: [], restDuration: 90 },
+  t1: { name: 'Dipy na blacie', muscleGroup: 'Triceps', muscles: ['Triceps'], equipment: 'Krzesło / blat', description: 'Oprzyj dłonie na twardej powierzchni za plecami. Zginaj i prostuj łokcie.', image: 'https://via.placeholder.com/40/2C2C2E/636366?text=DK', alternatives: [], restDuration: 60 },
+  t2: { name: 'Skull Crusher z hantlami', muscleGroup: 'Triceps', muscles: ['Triceps (wszystkie głowy)'], equipment: 'Hantle', description: 'Leżąc, trzymaj hantle. Uginaj wyłącznie w łokciach, opuszczaj za głowę.', image: 'https://via.placeholder.com/40/2C2C2E/636366?text=SC', alternatives: [], restDuration: 60 },
+  a1: { name: 'Biceps Curl z hantlami', muscleGroup: 'Biceps', muscles: ['Biceps'], equipment: 'Hantle', description: 'Oburęcznie lub naprzemiennie. Ramiona przy tułowiu przez cały ruch.', image: 'https://via.placeholder.com/40/2C2C2E/636366?text=BC', alternatives: [], restDuration: 60 },
+};
+
+const getHomeAlternative = (ex) => {
+  if (HOME_ALTERNATIVES[ex.id]) return HOME_ALTERNATIVES[ex.id];
+  // custom_c1_0 → extract 'c1'
+  const m = ex.id.match(/^custom_(.+)_\d+$/);
+  if (m && HOME_ALTERNATIVES[m[1]]) return HOME_ALTERNATIVES[m[1]];
+  return null;
+};
+
+const applyHomeSwap = (ex) => {
+  const alt = getHomeAlternative(ex);
+  if (!alt) return ex;
+  return {
+    ...ex,
+    ...alt,
+    id: ex.id,
+    isHomeReplacement: true,
+    originalName: ex.name,
+    sets: ex.sets.map((s) => ({ ...s, done: false })),
+  };
+};
+
+const convertLibraryExercise = (ex, index) => {
+  const cfg  = ex.planConfig;
+  const base = {
+    id:             `custom_${ex.id}_${index}`,
+    name:            ex.name,
+    muscleGroup:    (ex.muscles ?? []).join(' · '),
+    description:     ex.description ?? '',
+    muscles:         ex.muscles ?? [],
+    alternatives:    ex.alternatives ?? [],
+    image:           ex.image ?? null,
+    exerciseType:    ex.exerciseType ?? null,
+    restDuration:    cfg?.rest ?? 90,
+    nextTrainingKg:  null,
+    sourcePlanExId:  ex.id,
+    planConfig:      cfg ?? null,
+  };
+
+  // Nowy format z indywidualnymi seriami (setRows)
+  if (cfg?.setRows?.length) {
+    return {
+      ...base,
+      sets: cfg.setRows.map((row, i) => ({
+        id:          `cs_${ex.id}_${i + 1}_${Date.now() + i}`,
+        prevLog:     '—',
+        kg:          row.weight ?? '',
+        reps:        row.reps ?? '',
+        rpe:         '',
+        done:        false,
+        suggested:   null,
+        aiSuggested: false,
+        setType:     'N',
+      })),
+    };
+  }
+
+  // Stary format (kompatybilność wsteczna)
+  const setCount  = cfg?.sets ?? 3;
+  const setTypes  = cfg?.setTypes ?? [];
+  const prefillKg = cfg?.weight ?? '';
+  const prefillReps = cfg?.repsMin ? String(cfg.repsMin) : '';
+  const suggested   = cfg?.repsMin && cfg?.repsMax ? `${cfg.repsMin}–${cfg.repsMax} pow.` : null;
+
+  return {
+    ...base,
+    sets: Array.from({ length: setCount }, (_, i) => ({
+      id:          `cs_${ex.id}_${i + 1}_${Date.now() + i}`,
+      prevLog:     '—',
+      kg:          prefillKg,
+      reps:        prefillReps,
+      rpe:         '',
+      done:        false,
+      suggested,
+      aiSuggested: false,
+      setType:     setTypes[i] ?? 'N',
+    })),
+  };
+};
 
 // ─── Epley 1RM: waga × (1 + powt/30) ────────────────────────────────────────
 const calcEpley1RM = (kg, reps) => {
@@ -718,15 +788,26 @@ const supersetColor = (groupId) => {
   return SUPERSET_COLORS[hash % SUPERSET_COLORS.length];
 };
 
+const BAND_LEVELS = [
+  { id: 'light',  label: 'Lekka',        color: '#FCD34D' },
+  { id: 'medium', label: 'Średnia',       color: '#34D399' },
+  { id: 'heavy',  label: 'Mocna',         color: '#60A5FA' },
+  { id: 'xheavy', label: 'Bardzo mocna',  color: '#F472B6' },
+];
+
 const ExerciseCard = memo(function ExerciseCard({
   exercise, exIndex,
   onUpdateSet, onToggleSet, onDeleteSet, onAddSet,
   onRestChange, onInfoPress, onCascadeUpdate,
   onDeleteExercise, onSwapExercise,
   onDropSetPress,
+  onChangeLoadMode,
   supersetGroup,
   onToggleSuperset,
+  bodyWeight,
+  onUpdateBodyWeight,
 }) {
+  const isBWWeighted = exercise.exerciseType === 'bodyweight_weighted';
   const { colors } = useTheme();
   const cardStyles = makeCardStyles(colors);
   const [restModal, setRestModal]                   = useState(false);
@@ -735,6 +816,11 @@ const ExerciseCard = memo(function ExerciseCard({
   const [plateCalcKg, setPlateCalcKg]               = useState(null);
   const [historyVisible, setHistoryVisible]         = useState(false);
   const [machineSettingsVisible, setMachineSettingsVisible] = useState(false);
+  const [loadModeVisible, setLoadModeVisible]       = useState(false);
+  const [bandLevel, setBandLevel]                   = useState('medium'); // dla trybu gumy
+
+  const loadMode = exercise.loadMode ?? 'barbell';
+  const loadModeInfo = LOAD_MODES.find((m) => m.id === loadMode);
   const glowAnim = useRef(new Animated.Value(0)).current;
   const glowColor = supersetGroup ? supersetColor(supersetGroup) : null;
 
@@ -822,11 +908,66 @@ const ExerciseCard = memo(function ExerciseCard({
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity style={cardStyles.restChip} onPress={() => setRestModal(true)} activeOpacity={0.7}>
-        <Ionicons name="timer-outline" size={13} color="#8E8E93" />
-        <Text style={cardStyles.restChipText}>Przerwa: {fmt(exercise.restDuration)}</Text>
-        <Ionicons name="chevron-down" size={12} color="#3A3A3C" />
-      </TouchableOpacity>
+      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+        <TouchableOpacity style={cardStyles.restChip} onPress={() => setRestModal(true)} activeOpacity={0.7}>
+          <Ionicons name="timer-outline" size={13} color="#8E8E93" />
+          <Text style={cardStyles.restChipText}>Przerwa: {fmt(exercise.restDuration)}</Text>
+          <Ionicons name="chevron-down" size={12} color="#3A3A3C" />
+        </TouchableOpacity>
+
+        {/* Chip trybu obciążenia (pokazuje się tylko gdy nie jest domyślny) */}
+        {loadMode !== 'barbell' && (
+          <TouchableOpacity
+            style={[cardStyles.restChip, { borderColor: '#34D399', borderWidth: 1 }]}
+            onPress={() => setLoadModeVisible(true)}
+            activeOpacity={0.7}
+          >
+            <Text style={{ fontSize: 12 }}>{loadModeInfo?.icon ?? '🏋️'}</Text>
+            <Text style={[cardStyles.restChipText, { color: '#34D399' }]}>{loadModeInfo?.label}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Specjalny baner Kalistenika / Gumy */}
+      {loadMode === 'bodyweight' && (
+        <View style={[cardStyles.loadModeBanner, { backgroundColor: 'rgba(52,211,153,0.08)', borderColor: '#34D399' }]}>
+          <Text style={{ fontSize: 16 }}>🤸</Text>
+          <Text style={{ fontSize: 12, color: '#34D399', flex: 1 }}>
+            Tryb waga ciała — w polu kg podaj dodatkowe obciążenie (np. pas z talerzami). Bez obciążenia wpisz 0.
+          </Text>
+        </View>
+      )}
+      {loadMode === 'bands' && (
+        <View style={[cardStyles.loadModeBanner, { backgroundColor: 'rgba(167,139,250,0.08)', borderColor: colors.library }]}>
+          <Text style={{ fontSize: 16 }}>🎯</Text>
+          <View style={{ flex: 1, gap: 6 }}>
+            <Text style={{ fontSize: 12, color: colors.library }}>Opór gumy — wybierz poziom:</Text>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              {BAND_LEVELS.map((b) => (
+                <TouchableOpacity
+                  key={b.id}
+                  style={[
+                    cardStyles.bandChip,
+                    { borderColor: b.color, backgroundColor: bandLevel === b.id ? b.color + '25' : 'transparent' },
+                  ]}
+                  onPress={() => setBandLevel(b.id)}
+                  activeOpacity={0.75}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: '600', color: b.color }}>{b.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </View>
+      )}
+      {loadMode === 'dumbbells' && (
+        <View style={[cardStyles.loadModeBanner, { backgroundColor: 'rgba(239,159,39,0.08)', borderColor: colors.warning }]}>
+          <Text style={{ fontSize: 16 }}>💪</Text>
+          <Text style={{ fontSize: 12, color: colors.warning, flex: 1 }}>
+            Hantle — wpisz ciężar jednego hantla. Łączne obciążenie = 2× podana wartość.
+          </Text>
+        </View>
+      )}
 
       {/* Pływający Widget 1RM */}
       <OneRMWidget
@@ -836,10 +977,16 @@ const ExerciseCard = memo(function ExerciseCard({
       />
 
       <View style={cardStyles.colHeaders}>
-        <View style={{ width: 20 }} />
+        <View style={{ width: 36 }} />
         <View style={{ flex: 1 }}><Text style={cardStyles.colH}>Poprzednio</Text></View>
         <Text style={[cardStyles.colH, { width: 46, textAlign: 'center' }]}>RPE</Text>
-        <Text style={[cardStyles.colH, { width: 46, textAlign: 'center' }]}>kg</Text>
+        {isBWWeighted ? (
+          <Text style={[cardStyles.colH, { width: 104, textAlign: 'center', color: colors.accent }]}>
+            👤BW + ⚙️ Dodane
+          </Text>
+        ) : (
+          <Text style={[cardStyles.colH, { width: 46, textAlign: 'center' }]}>kg</Text>
+        )}
         <Text style={[cardStyles.colH, { width: 52, textAlign: 'center' }]}>Powt.</Text>
         <Text style={[cardStyles.colH, { width: 44, textAlign: 'center' }]}>✓</Text>
       </View>
@@ -852,11 +999,15 @@ const ExerciseCard = memo(function ExerciseCard({
           totalSets={exercise.sets.length}
           progression={progression}
           onUpdate={(field, value) => onUpdateSet(exIndex, set.id, field, value)}
+          onCycleSetType={() => onUpdateSet(exIndex, set.id, 'setType', cycleSetType(resolveSetType(set.setType, set.isDropSet)))}
           onToggleComplete={() => onToggleSet(exIndex, set.id)}
           onDeleteSet={() => onDeleteSet(exIndex, set.id)}
           onDeleteExercise={confirmDeleteExercise}
           onCascadeUpdate={(newKg, newReps) => onCascadeUpdate(exIndex, idx, newKg, newReps, null)}
           onDropSetPress={() => onDropSetPress?.(exIndex, idx)}
+          isBWWeighted={isBWWeighted}
+          bodyWeight={bodyWeight}
+          onUpdateBodyWeight={onUpdateBodyWeight}
         />
       ))}
 
@@ -929,12 +1080,21 @@ const ExerciseCard = memo(function ExerciseCard({
         onDelete={() => { setActionsModal(false); confirmDeleteExercise(); }}
         onToggleSuperset={() => { setActionsModal(false); onToggleSuperset?.(exIndex); }}
         onMachineSettings={() => { setActionsModal(false); setMachineSettingsVisible(true); }}
+        onLoadMode={() => { setActionsModal(false); setLoadModeVisible(true); }}
+        currentLoadMode={loadMode}
       />
 
       <MachineSettingsModal
         isVisible={machineSettingsVisible}
         exerciseName={exercise.name}
         onClose={() => setMachineSettingsVisible(false)}
+      />
+
+      <LoadModeModal
+        isVisible={loadModeVisible}
+        currentMode={loadMode}
+        onSelect={(mode) => onChangeLoadMode?.(exIndex, mode)}
+        onClose={() => setLoadModeVisible(false)}
       />
     </Animated.View>
   );
@@ -963,15 +1123,150 @@ const makeCardStyles = (c) => StyleSheet.create({
   actionSwap:    { backgroundColor: c.backgroundSecondary, borderColor: c.border },
   actionSwapText:{ fontSize: 13, fontWeight: '500', color: c.textSecondary },
   deleteExBtn:   { width: 38, height: 38, borderRadius: 10, backgroundColor: c.dangerSoft, justifyContent: 'center', alignItems: 'center', borderWidth: 0.5, borderColor: c.dangerSoft },
+  loadModeBanner:{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 10, borderWidth: 0.5, padding: 10, marginBottom: 10 },
+  bandChip:      { borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+});
+
+// ─── Tryb Krajobrazowy (Rack View) ───────────────────────────────────────────
+const RackView = memo(function RackView({ exercises, timerRef, restActive, restDuration, restKey, colors }) {
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const pulse = useRef(new Animated.Value(1)).current;
+
+  // Odświeżaj timer co sekundę
+  useEffect(() => {
+    const iv = setInterval(() => setElapsedSec(timerRef.current?.getSeconds() ?? 0), 1000);
+    return () => clearInterval(iv);
+  }, [timerRef]);
+
+  // Znajdź pierwszą niezaliczoną serię
+  const nextSet = useMemo(() => {
+    for (const ex of exercises) {
+      const setIdx = ex.sets.findIndex((s) => !s.done);
+      if (setIdx !== -1) {
+        const set = ex.sets[setIdx];
+        return {
+          exName: ex.name,
+          muscles: ex.muscleGroup,
+          setNum: setIdx + 1,
+          totalSets: ex.sets.length,
+          kg: set.kg || '—',
+          reps: set.reps || '—',
+        };
+      }
+    }
+    return null;
+  }, [exercises]);
+
+  // Tonaż ukończonych serii
+  const tonnage = useMemo(() =>
+    exercises.reduce((acc, ex) =>
+      acc + ex.sets.reduce((s, set) =>
+        set.done ? s + (parseFloat(set.kg) || 0) * (parseInt(set.reps) || 0) : s, 0), 0),
+    [exercises]);
+
+  const doneSets = exercises.reduce((a, ex) => a + ex.sets.filter((s) => s.done).length, 0);
+  const totalSets = exercises.reduce((a, ex) => a + ex.sets.length, 0);
+
+  const fmtTime = (s) => {
+    const m = Math.floor(s / 60), sc = s % 60;
+    return `${String(m).padStart(2, '0')}:${String(sc).padStart(2, '0')}`;
+  };
+
+  const rackStyles = makeRackStyles(colors);
+
+  return (
+    <View style={rackStyles.overlay}>
+      {/* Timer */}
+      <Text style={rackStyles.timerLabel}>CZAS TRENINGU</Text>
+      <Text style={rackStyles.timer}>{fmtTime(elapsedSec)}</Text>
+
+      {/* Aktualne ćwiczenie */}
+      {nextSet ? (
+        <>
+          <Text style={rackStyles.exerciseName} numberOfLines={2}>{nextSet.exName}</Text>
+          <Text style={rackStyles.muscles}>{nextSet.muscles}</Text>
+          <View style={rackStyles.setRow}>
+            <View style={rackStyles.dataBlock}>
+              <Text style={rackStyles.dataLabel}>CIĘŻAR</Text>
+              <Text style={rackStyles.dataValue}>{nextSet.kg}<Text style={rackStyles.dataUnit}> kg</Text></Text>
+            </View>
+            <View style={rackStyles.dataSep} />
+            <View style={rackStyles.dataBlock}>
+              <Text style={rackStyles.dataLabel}>POWTÓRZENIA</Text>
+              <Text style={rackStyles.dataValue}>{nextSet.reps}<Text style={rackStyles.dataUnit}> ×</Text></Text>
+            </View>
+            <View style={rackStyles.dataSep} />
+            <View style={rackStyles.dataBlock}>
+              <Text style={rackStyles.dataLabel}>SERIA</Text>
+              <Text style={rackStyles.dataValue}>{nextSet.setNum}<Text style={rackStyles.dataUnit}>/{nextSet.totalSets}</Text></Text>
+            </View>
+          </View>
+        </>
+      ) : (
+        <Text style={rackStyles.allDone}>✅ Wszystkie serie zaliczone!</Text>
+      )}
+
+      {/* Stopka — tonaż + ukończone serie */}
+      <View style={rackStyles.footer}>
+        <View style={rackStyles.footerItem}>
+          <Ionicons name="barbell-outline" size={14} color={colors.textTertiary} />
+          <Text style={rackStyles.footerText}>{tonnage} kg łączny tonaż</Text>
+        </View>
+        <View style={rackStyles.footerItem}>
+          <Ionicons name="checkmark-circle-outline" size={14} color={colors.textTertiary} />
+          <Text style={rackStyles.footerText}>{doneSets}/{totalSets} serii</Text>
+        </View>
+      </View>
+
+      <Text style={rackStyles.hint}>Obróć telefon pionowo, by wrócić</Text>
+    </View>
+  );
+});
+
+const makeRackStyles = (c) => StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: c.background,
+    zIndex: 9999,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+    gap: 8,
+  },
+  timerLabel:   { fontSize: 11, fontWeight: '700', color: c.textTertiary, letterSpacing: 2, marginBottom: -4 },
+  timer:        { fontSize: 96, fontWeight: '800', color: c.textPrimary, letterSpacing: 2, fontVariant: ['tabular-nums'] },
+  exerciseName: { fontSize: 28, fontWeight: '700', color: c.textPrimary, textAlign: 'center', marginTop: 8 },
+  muscles:      { fontSize: 14, color: c.textSecondary, textAlign: 'center', marginBottom: 16 },
+  setRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: c.backgroundSecondary,
+    borderRadius: 20, borderWidth: 0.5, borderColor: c.border,
+    paddingVertical: 20, paddingHorizontal: 24, gap: 0,
+  },
+  dataBlock:  { flex: 1, alignItems: 'center', gap: 4 },
+  dataLabel:  { fontSize: 9, fontWeight: '700', color: c.textTertiary, letterSpacing: 1.5 },
+  dataValue:  { fontSize: 42, fontWeight: '800', color: c.accent, fontVariant: ['tabular-nums'] },
+  dataUnit:   { fontSize: 16, fontWeight: '600', color: c.textSecondary },
+  dataSep:    { width: 1, height: 60, backgroundColor: c.border },
+  allDone:    { fontSize: 28, fontWeight: '700', color: c.accent, textAlign: 'center' },
+  footer:     { flexDirection: 'row', gap: 24, marginTop: 20 },
+  footerItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  footerText: { fontSize: 13, color: c.textTertiary },
+  hint:       { fontSize: 11, color: c.borderMuted, marginTop: 12 },
 });
 
 export default function ActiveWorkoutScreen({ navigation, route }) {
-  const { activeWorkout, minimizeWorkout, saveWorkoutToHistory, clearActiveWorkout } = useWorkoutContext();
+  const { activeWorkout, customPlans, minimizeWorkout, saveWorkoutToHistory, clearActiveWorkout, updateCustomPlan } = useWorkoutContext();
   const { colors } = useTheme();
+  const { width: winW, height: winH } = useWindowDimensions();
+  const isLandscape = winW > winH;
+  const [bodyWeight, updateBodyWeight] = useBodyWeight(80);
 
-  const workoutName     = route?.params?.templateName ?? activeWorkout?.workoutName ?? 'Mój trening';
-  const templateId      = route?.params?.templateId;
-  const customExercises = route?.params?.customExercises;
+  const workoutName        = route?.params?.templateName ?? activeWorkout?.workoutName ?? 'Mój trening';
+  const templateId         = route?.params?.templateId;
+  const customExercises    = route?.params?.customExercises;
+  const initialSSGroups    = route?.params?.supersetGroups ?? {};
+  const customPlanId       = route?.params?.customPlanId ?? null;
 
   const initialExercises = useMemo(() => {
     if (activeWorkout?.exercises?.length > 0) return activeWorkout.exercises;
@@ -985,8 +1280,27 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   const [exercises, setExercises]           = useState(initialExercises);
   // Oryginalna kolejność ID — używana przy przywracaniu po rozłączeniu super-serii
   const originalOrderRef = useRef(initialExercises.map((ex) => ex.id));
-  // supersetGroups: { exId: groupId }
-  const [supersetGroups, setSupersetGroups]           = useState({});
+
+  // ── Tryb Domowy ──────────────────────────────────────────────────────────────
+  const [homeModeActive, setHomeModeActive]         = useState(false);
+  const [homeTransitioning, setHomeTransitioning]   = useState(false);
+  const originalExercisesRef                        = useRef(null);
+  const exerciseListOpacity                         = useRef(new Animated.Value(1)).current;
+
+  // ── Quick BW Update Modal ────────────────────────────────────────────────────
+  const [bwModalVisible, setBWModalVisible] = useState(false);
+  const [tempBW, setTempBW]                 = useState('');
+  // supersetGroups: { exId: groupId } — inicjowane z planu jeśli dostępne
+  // Remapowanie kluczy z ID planu (ex.id) na ID treningu (custom_ex.id_idx)
+  const [supersetGroups, setSupersetGroups] = useState(() => {
+    if (!customExercises?.length || !Object.keys(initialSSGroups).length) return initialSSGroups;
+    const remapped = {};
+    customExercises.forEach((ex, idx) => {
+      const groupId = initialSSGroups[ex.id];
+      if (groupId) remapped[`custom_${ex.id}_${idx}`] = groupId;
+    });
+    return remapped;
+  });
   const [supersetPickerExIdx, setSupersetPickerExIdx] = useState(null);
   const [restActive, setRestActive]         = useState(false);
   const [restDuration, setRestDuration]     = useState(120);
@@ -1037,6 +1351,25 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   }, []);
 
   const hideRestBanner = useCallback(() => setRestActive(false), []);
+
+  const toggleHomeMode = useCallback(() => {
+    if (homeTransitioning) return;
+    setHomeTransitioning(true);
+    Animated.timing(exerciseListOpacity, { toValue: 0.12, duration: 280, useNativeDriver: true }).start(() => {
+      setExercises((prev) => {
+        if (!homeModeActive) {
+          originalExercisesRef.current = prev;
+          return prev.map(applyHomeSwap);
+        }
+        return originalExercisesRef.current ?? prev;
+      });
+      setHomeModeActive((v) => !v);
+      setTimeout(() => {
+        Animated.timing(exerciseListOpacity, { toValue: 1, duration: 380, useNativeDriver: true }).start();
+        setHomeTransitioning(false);
+      }, 350);
+    });
+  }, [homeModeActive, homeTransitioning, exerciseListOpacity]);
 
   const confirmFirstPendingSet = useCallback(() => {
     setExercises((prev) => {
@@ -1279,6 +1612,12 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
     setExercises((prev) => [...prev, exercise]);
   }, []);
 
+  const handleChangeLoadMode = useCallback((exIdx, mode) => {
+    setExercises((prev) => prev.map((ex, i) =>
+      i !== exIdx ? ex : { ...ex, loadMode: mode }
+    ));
+  }, []);
+
   const segmentFill = (ex) => {
     const done = ex.sets.filter((s) => s.done).length;
     return ex.sets.length === 0 ? 0 : done / ex.sets.length;
@@ -1290,6 +1629,46 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
     navigation.goBack();
   };
 
+  const checkProgressiveOverload = useCallback((completedExercises, planId) => {
+    const plan = customPlans?.find(p => p.id === planId);
+    if (!plan) return;
+    const improvements = [];
+    completedExercises.forEach(ex => {
+      const planEx = plan.exercises?.find(pe =>
+        pe.id === ex.sourcePlanExId || pe.name === ex.name
+      );
+      if (!planEx?.planConfig) return;
+      const templateKg = parseFloat(planEx.planConfig.weight || '0');
+      if (!templateKg) return;
+      const bestKg = Math.max(0, ...ex.sets
+        .filter(s => s.done && parseFloat(s.kg) > 0)
+        .map(s => parseFloat(s.kg)));
+      if (bestKg > templateKg) {
+        improvements.push({ name: ex.name, old: templateKg, new: bestKg, planEx });
+      }
+    });
+    if (!improvements.length) return;
+    const lines = improvements.map(i => `• ${i.name}: ${i.old} → ${i.new} kg`).join('\n');
+    Alert.alert(
+      '🏆 Rekord pobity!',
+      `Ciężar szablonu pobity:\n${lines}\n\nZaktualizować plan?`,
+      [
+        { text: 'Nie', style: 'cancel' },
+        {
+          text: 'Aktualizuj',
+          onPress: () => {
+            const updatedExercises = plan.exercises.map(pe => {
+              const imp = improvements.find(i => i.planEx === pe);
+              if (!imp) return pe;
+              return { ...pe, planConfig: { ...pe.planConfig, weight: String(imp.new) } };
+            });
+            updateCustomPlan(planId, { exercises: updatedExercises });
+          },
+        },
+      ]
+    );
+  }, [customPlans, updateCustomPlan]);
+
   const handleFinish = () => {
     timerHudRef.current?.pause();
     setRestActive(false);
@@ -1297,10 +1676,22 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   };
 
   const styles = makeStyles(colors);
+  const bwMS   = bwModalStyles(colors);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
         <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          {/* ─── Tryb Krajobrazowy (Rack View) ─────────────────────────── */}
+          {isLandscape && (
+            <RackView
+              exercises={exercises}
+              timerRef={timerHudRef}
+              restActive={restActive}
+              restDuration={restDuration}
+              restKey={restKey}
+              colors={colors}
+            />
+          )}
 
           {/* Segmentowy pasek postępu — kolor zmienia się gdy ćwiczenie ukończone */}
           <View style={styles.segmentBar}>
@@ -1331,6 +1722,20 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
               <Text style={styles.workoutTitle} numberOfLines={1}>{workoutName}</Text>
               <Text style={styles.workoutSub}>{exercises.length} ćwiczeń · {doneSets} serii</Text>
             </View>
+
+            {/* Tryb Domowy toggle */}
+            <TouchableOpacity
+              style={[styles.homeModeBtn, homeModeActive && styles.homeModeBtnActive]}
+              onPress={toggleHomeMode}
+              activeOpacity={0.75}
+              disabled={homeTransitioning}
+            >
+              <Text style={styles.homeModeEmoji}>🏠</Text>
+              {homeModeActive && (
+                <View style={styles.homeModeDot} />
+              )}
+            </TouchableOpacity>
+
             <TouchableOpacity style={styles.minimizeBtn} onPress={handleMinimize} activeOpacity={0.7}>
               <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
             </TouchableOpacity>
@@ -1364,37 +1769,63 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
               </View>
             )}
 
-            {isReady && exercises.map((ex, exIdx) => {
-              const group      = supersetGroups[ex.id] ?? null;
-              const nextGroup  = exercises[exIdx + 1] ? supersetGroups[exercises[exIdx + 1].id] : null;
-              const showConnector = group && nextGroup && group === nextGroup;
-              return (
-                <View key={ex.id}>
-                  <ExerciseCard
-                    exercise={ex}
-                    exIndex={exIdx}
-                    onUpdateSet={handleUpdateSet}
-                    onToggleSet={handleToggleSet}
-                    onDeleteSet={handleDeleteSet}
-                    onAddSet={handleAddSet}
-                    onRestChange={handleRestChange}
-                    onInfoPress={() => { setInfoExercise(ex); setInfoVisible(true); }}
-                    onCascadeUpdate={handleCascadeUpdate}
-                    onDeleteExercise={() => handleDeleteExercise(exIdx)}
-                    onSwapExercise={handleSwapExercise}
-                    onDropSetPress={handleDropSetCreate}
-                    supersetGroup={group}
-                    onToggleSuperset={handleToggleSuperset}
-                  />
-                  {showConnector && (
-                    <SupersetConnector
-                      colors={colors}
-                      groupColor={supersetColor(group)}
-                    />
-                  )}
+            {/* Tryb domowy — skeleton podczas podmiany */}
+            {homeTransitioning && (
+              <View style={styles.skeletonWrapper}>
+                <View style={styles.homeModeSkeletonBanner}>
+                  <Text style={styles.homeModeSkeletonText}>
+                    {homeModeActive ? '🏠 Przełączam na ćwiczenia domowe...' : '🏋️ Przywracam plan siłowniany...'}
+                  </Text>
                 </View>
-              );
-            })}
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <View key={i} style={styles.skeletonCard} />
+                ))}
+              </View>
+            )}
+
+            {isReady && !homeTransitioning && (
+              <Animated.View style={{ opacity: exerciseListOpacity }}>
+                {exercises.map((ex, exIdx) => {
+                  const group      = supersetGroups[ex.id] ?? null;
+                  const nextGroup  = exercises[exIdx + 1] ? supersetGroups[exercises[exIdx + 1].id] : null;
+                  const showConnector = group && nextGroup && group === nextGroup;
+                  return (
+                    <View key={ex.id}>
+                      {ex.isHomeReplacement && (
+                        <View style={styles.homeReplacementBanner}>
+                          <Text style={styles.homeReplacementText}>🏠 zamiennik · {ex.originalName}</Text>
+                        </View>
+                      )}
+                      <ExerciseCard
+                        exercise={ex}
+                        exIndex={exIdx}
+                        onUpdateSet={handleUpdateSet}
+                        onToggleSet={handleToggleSet}
+                        onDeleteSet={handleDeleteSet}
+                        onAddSet={handleAddSet}
+                        onRestChange={handleRestChange}
+                        onInfoPress={() => { setInfoExercise(ex); setInfoVisible(true); }}
+                        onCascadeUpdate={handleCascadeUpdate}
+                        onDeleteExercise={() => handleDeleteExercise(exIdx)}
+                        onSwapExercise={handleSwapExercise}
+                        onDropSetPress={handleDropSetCreate}
+                        onChangeLoadMode={handleChangeLoadMode}
+                        supersetGroup={group}
+                        onToggleSuperset={handleToggleSuperset}
+                        bodyWeight={bodyWeight}
+                        onUpdateBodyWeight={() => { setTempBW(String(bodyWeight)); setBWModalVisible(true); }}
+                      />
+                      {showConnector && (
+                        <SupersetConnector
+                          colors={colors}
+                          groupColor={supersetColor(group)}
+                        />
+                      )}
+                    </View>
+                  );
+                })}
+              </Animated.View>
+            )}
 
             {isReady && exercises.length === 0 && (
               <View style={styles.emptyPlan}>
@@ -1481,11 +1912,61 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
             }}
             onSave={() => {
               const finalSec = timerHudRef.current?.getSeconds() ?? 0;
-              saveWorkoutToHistory({ workoutName, exercises, timerSec: finalSec, tonnage: totalTonnage, note: sessionNote });
+              saveWorkoutToHistory({ workoutName, exercises, timerSec: finalSec, tonnage: totalTonnage, note: sessionNote, sourcePlanId: customPlanId });
               setSummaryVisible(false);
               navigation?.goBack();
+              if (customPlanId) {
+                setTimeout(() => checkProgressiveOverload(exercises, customPlanId), 600);
+              }
             }}
           />
+
+          {/* Quick BW Update Modal */}
+          <Modal
+            visible={bwModalVisible}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setBWModalVisible(false)}
+          >
+            <TouchableOpacity
+              style={bwMS.overlay}
+              onPress={() => setBWModalVisible(false)}
+              activeOpacity={1}
+            >
+              <View style={bwMS.box}>
+                <View style={bwMS.handle} />
+                <Text style={bwMS.title}>👤 Waga ciała</Text>
+                <Text style={bwMS.subtitle}>
+                  Używana do obliczeń tonażu w ćwiczeniach z obciążeniem własnym ciała.
+                </Text>
+                <View style={bwMS.inputRow}>
+                  <TextInput
+                    style={bwMS.input}
+                    value={tempBW}
+                    onChangeText={setTempBW}
+                    keyboardType="decimal-pad"
+                    autoFocus
+                    selectTextOnFocus
+                    maxLength={5}
+                    placeholder="80"
+                    placeholderTextColor={colors.borderMuted}
+                  />
+                  <Text style={bwMS.unit}>kg</Text>
+                </View>
+                <TouchableOpacity
+                  style={bwMS.saveBtn}
+                  onPress={async () => {
+                    await updateBodyWeight(tempBW);
+                    setBWModalVisible(false);
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="checkmark" size={16} color={colors.accentText} />
+                  <Text style={bwMS.saveBtnText}>Zapisz wagę</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </Modal>
         </KeyboardAvoidingView>
     </GestureHandlerRootView>
   );
@@ -1526,6 +2007,42 @@ const makeStyles = (c) => StyleSheet.create({
   skeletonWrapper: { paddingTop: 8 },
   skeletonCard:    { height: 140, backgroundColor: c.backgroundSecondary, marginHorizontal: 16, marginBottom: 16, borderRadius: 20, borderWidth: 0.5, borderColor: c.border, opacity: 0.6 },
 
+  homeModeBtn: {
+    width: 34, height: 34, borderRadius: 10,
+    backgroundColor: c.card, justifyContent: 'center', alignItems: 'center',
+    borderWidth: 0.5, borderColor: c.border,
+  },
+  homeModeBtnActive: {
+    backgroundColor: '#EF9F2722', borderColor: '#EF9F27',
+  },
+  homeModeEmoji: { fontSize: 16 },
+  homeModeDot: {
+    position: 'absolute', top: 5, right: 5,
+    width: 7, height: 7, borderRadius: 4,
+    backgroundColor: '#EF9F27',
+  },
+
+  homeModeSkeletonBanner: {
+    marginHorizontal: 16, marginBottom: 10, marginTop: 4,
+    backgroundColor: '#EF9F2722',
+    borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14,
+    borderWidth: 0.5, borderColor: '#EF9F27',
+    alignItems: 'center',
+  },
+  homeModeSkeletonText: {
+    fontSize: 13, fontWeight: '600', color: '#EF9F27',
+  },
+
+  homeReplacementBanner: {
+    marginHorizontal: 16, marginBottom: -6, marginTop: 6,
+    backgroundColor: '#EF9F2714',
+    borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10,
+    flexDirection: 'row', alignItems: 'center',
+  },
+  homeReplacementText: {
+    fontSize: 10, fontWeight: '500', color: '#EF9F27', letterSpacing: 0.3,
+  },
+
   restBanner:     { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: c.backgroundSecondary, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20, borderTopWidth: 0.5, borderColor: c.border },
   restTop:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   restLabel:      { fontSize: 13, color: c.textSecondary, fontWeight: '500', flex: 1, marginRight: 10 },
@@ -1538,4 +2055,33 @@ const makeStyles = (c) => StyleSheet.create({
   restBtn:        { flex: 1, backgroundColor: c.card, borderRadius: 12, paddingVertical: 13, alignItems: 'center', borderWidth: 0.5, borderColor: c.border },
   restBtnSkip:    { backgroundColor: c.accentSoft, borderColor: c.accentSoft },
   restBtnText:    { fontSize: 14, fontWeight: '600', color: c.textPrimary },
+});
+
+const bwModalStyles = (c) => StyleSheet.create({
+  overlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  box: {
+    width: 300, backgroundColor: c.backgroundSecondary,
+    borderRadius: 22, padding: 24,
+    borderWidth: 0.5, borderColor: c.border,
+    alignItems: 'center', gap: 10,
+  },
+  handle:   { width: 36, height: 4, borderRadius: 2, backgroundColor: c.border, marginBottom: 4 },
+  title:    { fontSize: 18, fontWeight: '700', color: c.textPrimary },
+  subtitle: { fontSize: 12, color: c.textTertiary, textAlign: 'center', lineHeight: 17, marginBottom: 4 },
+  inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  input:    {
+    width: 120, height: 54,
+    backgroundColor: c.background, borderWidth: 1.5, borderColor: c.accent + '88', borderRadius: 14,
+    fontSize: 28, fontWeight: '700', color: c.textPrimary, textAlign: 'center',
+  },
+  unit:     { fontSize: 18, fontWeight: '600', color: c.textSecondary },
+  saveBtn:  {
+    marginTop: 6, flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: c.accent, borderRadius: 14,
+    paddingHorizontal: 28, paddingVertical: 12,
+  },
+  saveBtnText: { fontSize: 15, fontWeight: '700', color: c.accentText },
 });

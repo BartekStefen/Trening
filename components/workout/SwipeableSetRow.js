@@ -7,6 +7,7 @@ import { Swipeable } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../../context/ThemeContext';
+import SetTypeButton, { resolveSetType } from './SetTypeButton';
 
 const GYM_KEYWORDS = [
   'kg','kilo','powt','rep','rpe','rir','zapas','seri','max','maksa','pr','rekord',
@@ -183,6 +184,68 @@ const SmartInsightCard = ({ progression, uiKg, uiReps, onCascadeUpdate }) => {
   );
 };
 
+// ─── BW Equation Input — dla ćwiczeń bodyweight_weighted ─────────────────────
+const BWEquationInput = ({ bodyWeight, extraKg, onExtraChange, done, onBWPress, colors }) => {
+  const s = makeBWStyles(colors);
+  return (
+    <View style={s.wrapper}>
+      <TouchableOpacity
+        style={[s.bwChip, done && s.chipDone]}
+        onPress={!done ? onBWPress : undefined}
+        activeOpacity={0.7}
+        hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+      >
+        <Text style={s.bwEmoji}>👤</Text>
+        <Text style={[s.bwValue, done && s.dimText]}>{bodyWeight}</Text>
+        <Ionicons
+          name="lock-closed"
+          size={7}
+          color={done ? colors.borderMuted : colors.textTertiary}
+          style={{ marginTop: 1 }}
+        />
+      </TouchableOpacity>
+      <Text style={[s.plus, done && s.dimText]}>+</Text>
+      <View style={s.extraWrap}>
+        <Text style={s.gearIcon}>⚙️</Text>
+        <TextInput
+          style={[s.extraInput, done && s.chipDone]}
+          value={extraKg ?? ''}
+          onChangeText={onExtraChange}
+          keyboardType="numeric"
+          maxLength={5}
+          placeholder="0"
+          placeholderTextColor={colors.borderMuted}
+          editable={!done}
+          selectTextOnFocus
+        />
+      </View>
+    </View>
+  );
+};
+
+const makeBWStyles = (c) => StyleSheet.create({
+  wrapper:   { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  bwChip: {
+    width: 50, minHeight: 48,
+    backgroundColor: c.card, borderWidth: 1, borderColor: c.border, borderRadius: 10,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2, opacity: 0.85,
+  },
+  chipDone:   { opacity: 0.45, borderColor: c.card },
+  bwEmoji:    { fontSize: 11 },
+  bwValue:    { fontSize: 13, fontWeight: '700', color: c.textSecondary },
+  dimText:    { color: c.borderMuted },
+  plus:       { fontSize: 13, fontWeight: '600', color: c.textTertiary },
+  extraWrap:  { flexDirection: 'row', alignItems: 'center', position: 'relative' },
+  gearIcon:   { fontSize: 10, position: 'absolute', left: 4, top: 4, zIndex: 1 },
+  extraInput: {
+    width: 46, minHeight: 48,
+    backgroundColor: c.background,
+    borderWidth: 1.5, borderColor: c.accent + '88', borderRadius: 10,
+    fontSize: 14, fontWeight: '700', color: c.textPrimary,
+    textAlign: 'center', paddingLeft: 14, paddingRight: 4, paddingVertical: 4,
+  },
+});
+
 // ─── Główny komponent wiersza serii ──────────────────────────────────────────
 const SwipeableSetRow = ({
   setData,
@@ -195,8 +258,12 @@ const SwipeableSetRow = ({
   onDeleteExercise, // wywołane gdy to ostatnia seria
   onCascadeUpdate,
   onDropSetPress,
+  onCycleSetType,   // callback — cykl W→N→D→F
+  isBWWeighted,     // ćwiczenie z masą własną + obciążenie (np. podciąganie z pasem)
+  bodyWeight,       // waga ciała z profilu (kg)
+  onUpdateBodyWeight, // callback — otwiera modal do aktualizacji wagi ciała
 }) => {
-  const { prevLog, kg, reps, rpe, done, suggested, aiSuggested, isDropSet } = setData;
+  const { prevLog, kg, reps, rpe, done, suggested, aiSuggested, isDropSet, setType } = setData;
   const [aiOpen, setAiOpen]           = useState(false);
   const [rpePickerOpen, setRpePickerOpen] = useState(false);
   const swipeRef                      = useRef(null);
@@ -303,19 +370,17 @@ const SwipeableSetRow = ({
     >
       <Animated.View style={[
         styles.wrapper,
-        isDropSet && styles.wrapperDropSet,
+        (isDropSet || setType === 'D') && styles.wrapperDropSet,
         { backgroundColor: flashBg },
       ]}>
-        {isDropSet && (
-          <View style={styles.dropBadge}>
-            <Text style={styles.dropBadgeText}>⚡ drop-set</Text>
-          </View>
-        )}
 
         <View style={styles.row}>
-          <View style={styles.setNumWrapper}>
-            <Text style={styles.setNum}>{index + 1}</Text>
-          </View>
+          <SetTypeButton
+            type={resolveSetType(setType, isDropSet)}
+            index={index}
+            onPress={onCycleSetType}
+            disabled={done}
+          />
 
           <View style={styles.prevGroup}>
             <Text style={styles.prevText} numberOfLines={1}>{prevLog}</Text>
@@ -333,23 +398,38 @@ const SwipeableSetRow = ({
             </Text>
           </TouchableOpacity>
 
-          {/* ── Pole kg — zwykły TextInput ── */}
-          <View style={styles.inputWrap}>
-            <TextInput
-              style={[styles.input, styles.inputKg, done && styles.inputDone]}
-              value={kg}
-              onChangeText={(v) => onUpdate('kg', v)}
-              keyboardType="numeric"
-              maxLength={6}
-              placeholder="kg"
-              placeholderTextColor={colors.borderMuted}
-              editable={!done}
-              selectTextOnFocus
+          {/* ── Pole kg / BW equation ── */}
+          {isBWWeighted ? (
+            <BWEquationInput
+              bodyWeight={bodyWeight ?? 80}
+              extraKg={setData.extraKg}
+              onExtraChange={(v) => {
+                onUpdate('extraKg', v);
+                const total = (bodyWeight ?? 80) + (parseFloat(v) || 0);
+                onUpdate('kg', String(Math.round(total * 10) / 10));
+              }}
+              done={done}
+              onBWPress={onUpdateBodyWeight}
+              colors={colors}
             />
-            <View style={styles.arrow}>
-              <ProgressArrow value={kg} suggestedKg={progression?.suggestedKg} />
+          ) : (
+            <View style={styles.inputWrap}>
+              <TextInput
+                style={[styles.input, styles.inputKg, done && styles.inputDone]}
+                value={kg}
+                onChangeText={(v) => onUpdate('kg', v)}
+                keyboardType="numeric"
+                maxLength={6}
+                placeholder="kg"
+                placeholderTextColor={colors.borderMuted}
+                editable={!done}
+                selectTextOnFocus
+              />
+              <View style={styles.arrow}>
+                <ProgressArrow value={kg} suggestedKg={progression?.suggestedKg} />
+              </View>
             </View>
-          </View>
+          )}
 
           {/* Powtórzenia */}
           <TextInput

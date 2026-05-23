@@ -14,6 +14,7 @@ import DietScreen                 from './screens/DietScreen';
 import ProfileScreen              from './screens/ProfileScreen';
 import ToolsScreen                from './screens/ToolsScreen';
 import WorkoutHistoryScreen       from './screens/WorkoutHistoryScreen';
+import PlanCreatorScreen          from './screens/PlanCreatorScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -33,6 +34,7 @@ function TrainingStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="TrainingHome"     component={TrainingScreen} />
       <Stack.Screen name="ExercisesLibrary" component={ExercisesLibraryScreen} />
+      <Stack.Screen name="PlanCreator"     component={PlanCreatorScreen} />
       <Stack.Screen
         name="ActiveWorkout"
         component={ActiveWorkoutScreen}

@@ -39,9 +39,24 @@ export function WorkoutProvider({ children }) {
 
   const addCustomPlan = useCallback((plan) => {
     setCustomPlans((prev) => [
-      { ...plan, id: Date.now().toString(), createdAt: new Date().toISOString() },
+      {
+        ...plan,
+        id: Date.now().toString(),
+        createdAt: new Date().toISOString(),
+        supersetGroups: plan.supersetGroups ?? {},
+      },
       ...prev,
     ]);
+  }, []);
+
+  const deleteCustomPlan = useCallback((planId) => {
+    setCustomPlans((prev) => prev.filter((p) => p.id !== planId));
+  }, []);
+
+  const updateCustomPlan = useCallback((planId, updates) => {
+    setCustomPlans((prev) => prev.map((p) =>
+      p.id === planId ? { ...p, ...updates, lastUsedAt: new Date().toISOString() } : p
+    ));
   }, []);
 
   const saveWorkoutToHistory = useCallback((data) => {
@@ -58,7 +73,7 @@ export function WorkoutProvider({ children }) {
   return (
     <WorkoutContext.Provider value={{
       activeWorkout, customPlans, workoutHistory,
-      minimizeWorkout, clearActiveWorkout, addCustomPlan, saveWorkoutToHistory,
+      minimizeWorkout, clearActiveWorkout, addCustomPlan, deleteCustomPlan, updateCustomPlan, saveWorkoutToHistory,
     }}>
       {children}
     </WorkoutContext.Provider>

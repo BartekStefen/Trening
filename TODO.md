@@ -12,11 +12,11 @@
 
 ### Moduł Treningowy
 - [x] **Interfejs "Płynnego Kafelka" (Fluid Gestures)**: Swipe prawo = zaliczona (zielony ✓ + haptyka), swipe lewo = spalona 🔥 (Alert), przytrzymanie RPE = inline picker 6–10.
-- [ ] **Tryb Krajobrazowy (Rack View)**: Obrócenie telefonu poziomo zmienia interfejs w ogromne cyfry z timerem i ciężarem.
+- [x] **Tryb Krajobrazowy (Rack View)**: Obrócenie telefonu poziomo zmienia interfejs w ogromne cyfry z timerem i ciężarem.
 - [x] **Pamięć Ustawień Maszyn (Seat & Pin)**: MachineSettingsModal z AsyncStorage — fotel, PIN, oparcie, notatki. Dostępny przez ⋯ menu ćwiczenia.
-- [ ] **Kalistenika Pro & Home Workout**: Doliczanie wagi z profilu do pasa oraz tryb podmiany na gumy oporowe lub hantle.
+- [x] **Kalistenika Pro & Home Workout**: Doliczanie wagi z profilu do pasa oraz tryb podmiany na gumy oporowe lub hantle.
 - [x] **Wizualizator Super-Serii (Glow Effect)**: Pulsująca neonowa poświata na kartach + pionowy konektor między ćwiczeniami. Toggle w ⋯ menu.
-- [ ] **Kreator Planu (Drag & Drop)**: Wyklikiwanie nowej rutyny z opcją wizualnego łączenia ćwiczeń "klamrami" dla super-serii.
+- [x] **Kreator Planu (Drag & Drop)**: Wyklikiwanie nowej rutyny z opcją wizualnego łączenia ćwiczeń "klamrami" dla super-serii.
 - [x] **Krzywa Zaniku 1RM**: Algorytm obniżający 1RM o 5% co 4 tygodnie przerwy (max -30%), z pulsującym ostrzeżeniem.
 - [x] **Pływający Widget 1RM**: Chip z Epley 1RM nad wierszami serii — rozwijany szczegółami (surowe 1RM, zanik, ostatni wynik).
 - [ ] **Widżety Live Activities**: Na zablokowanym ekranie: ćwiczenie, ciężar, seria i czas do następnego podejścia.
@@ -71,6 +71,9 @@
 - [x] **ThemeContext + system skórek** (`theme/themes.js`, `context/ThemeContext.js`, AsyncStorage). Pokrycie: TrainingScreen, DietScreen, ToolsScreen, ProfileScreen, ActiveWorkoutScreen, WorkoutHistoryScreen, ExercisesLibraryScreen, WorkoutSummaryModal. Dynamiczny tab bar i StatusBar.
 
 ### Moduł Treningowy
+- [x] **Tryb Krajobrazowy (Rack View)**: Overlay fullscreen z ogromnym timerem, ciężarem i seriami — aktywuje się automatycznie przy obróceniu ekranu.
+- [x] **Kalistenika Pro & Home Workout**: Tryb obciążenia (Sztanga / Waga ciała / Gumy oporowe / Hantle) per ćwiczenie — dostępny przez ⋯ menu; baner z instrukcją i wybieracz poziomu gumy.
+- [x] **Kreator Planu (Drag & Drop)**: PlanCreatorScreen — przeciąganie ćwiczeń za uchwyt ≡, klamry super-serii między ćwiczeniami, zapis jako własny plan. Kreator zapisuje kolejność i grupy SS do WorkoutContext. Własne plany usuwalne przez przytrzymanie kafelka.
 - [x] Dashboard i Atlas (szablony, szybki start).
 - [x] Odizolowany Timer HUD (WorkoutTimerHUD) oraz RestTimerBanner.
 - [x] Parser NLP + slang ("zapas 2", normalizacja Unicode).

@@ -1,6 +1,13 @@
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+const LOAD_MODE_LABELS = {
+  barbell:    { label: 'Sztanga / Maszyna',   icon: '🏋️', sub: 'Standardowy ciężar w kg' },
+  bodyweight: { label: 'Waga ciała (BW)',      icon: '🤸', sub: 'Podciągnięcia, pompki, dipy…' },
+  bands:      { label: 'Gumy oporowe',         icon: '🎯', sub: 'Lekka / Średnia / Mocna / Extra' },
+  dumbbells:  { label: 'Hantle (para)',         icon: '💪', sub: 'Ciężar pary w kg' },
+};
+
 const ExerciseActionsModal = ({
   isVisible,
   exerciseName,
@@ -11,8 +18,10 @@ const ExerciseActionsModal = ({
   onDelete,
   onToggleSuperset,
   onMachineSettings,
+  onLoadMode,
   dropSetLimitReached,
   isInSuperset,
+  currentLoadMode,
 }) => (
   <Modal
     visible={isVisible}
@@ -83,6 +92,19 @@ const ExerciseActionsModal = ({
             <View style={{ flex: 1 }}>
               <Text style={s.rowLabel}>Ustawienia maszyny</Text>
               <Text style={s.limitText}>Fotel i pozycja uchwytu (PIN)</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="#3A3A3C" />
+          </TouchableOpacity>
+        )}
+
+        {onLoadMode && (
+          <TouchableOpacity style={s.row} onPress={onLoadMode} activeOpacity={0.7}>
+            <View style={[s.iconBox, { backgroundColor: 'rgba(52,211,153,0.12)' }]}>
+              <Text style={{ fontSize: 18 }}>{LOAD_MODE_LABELS[currentLoadMode ?? 'barbell']?.icon ?? '🏋️'}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.rowLabel}>Tryb obciążenia</Text>
+              <Text style={s.limitText}>{LOAD_MODE_LABELS[currentLoadMode ?? 'barbell']?.label}</Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color="#3A3A3C" />
           </TouchableOpacity>

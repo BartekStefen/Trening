@@ -24,7 +24,7 @@ export const EXERCISE_DATABASE = [
       { id: 'c1', name: 'Wyciskanie sztangi leżąc',   difficulty: 'Średni',       equipment: 'Sztanga',  muscles: ['Klatka piersiowa', 'Triceps', 'Przedni bark'], synergists: ['Zębaty przedni'],          alternatives: ['c3', 'c5'], image: 'https://via.placeholder.com/50/2C2C2E/636366?text=WS', description: 'Połóż się na ławce poziomej. Łopatki ściągnięte i dociśnięte do ławki. Opuść sztangę kontrolowanie do dolnej linii klatki, wypchnij eksplozywnie. Łokcie pod kątem ~75° względem tułowia.' },
       { id: 'c2', name: 'Wyciskanie na skosie',        difficulty: 'Średni',       equipment: 'Sztanga',  muscles: ['Górna klatka', 'Triceps', 'Przedni bark'],    synergists: ['Zębaty przedni'],          alternatives: ['c1', 'c5'], image: 'https://via.placeholder.com/50/2C2C2E/636366?text=WN', description: 'Ławka ustawiona pod kątem 30–45°. Trajektoria pracy kładzie nacisk na górną część klatki i obojczykową głowę mięśnia piersiowego większego.' },
       { id: 'c3', name: 'Rozpiętki z hantlami',        difficulty: 'Łatwy',        equipment: 'Hantle',   muscles: ['Klatka piersiowa'],                           synergists: ['Przedni bark'],            alternatives: ['c1'],       image: 'https://via.placeholder.com/50/2C2C2E/636366?text=RH', description: 'Izolacja klatki piersiowej. Ruch wyłącznie w stawie ramiennym – łokcie lekko ugięte i zablokowane w tej pozycji. Opuszczaj w szerokim łuku do rozciągnięcia klatki.' },
-      { id: 'c4', name: 'Dipy na poręczach',           difficulty: 'Średni',       equipment: 'Drążki',   muscles: ['Dolna klatka', 'Triceps'],                    synergists: ['Przedni bark'],            alternatives: ['c1'],       image: 'https://via.placeholder.com/50/2C2C2E/636366?text=DP', description: 'Lekkie pochylenie tułowia do przodu (~30°) przenosi nacisk z tricepsa na dolną część klatki. Opuszczaj do kąta ~90° w łokciach.' },
+      { id: 'c4', name: 'Dipy na poręczach',           difficulty: 'Średni',       equipment: 'Drążki',   muscles: ['Dolna klatka', 'Triceps'],                    synergists: ['Przedni bark'],            alternatives: ['c1'],       image: 'https://via.placeholder.com/50/2C2C2E/636366?text=DP', description: 'Lekkie pochylenie tułowia do przodu (~30°) przenosi nacisk z tricepsa na dolną część klatki. Opuszczaj do kąta ~90° w łokciach.', exerciseType: 'bodyweight_weighted' },
       { id: 'c5', name: 'Wyciskanie hantlami leżąc',   difficulty: 'Łatwy',        equipment: 'Hantle',   muscles: ['Klatka piersiowa', 'Triceps'],                synergists: ['Zębaty przedni'],          alternatives: ['c1'],       image: 'https://via.placeholder.com/50/2C2C2E/636366?text=WH', description: 'Większy zakres ruchu niż przy sztandze – hantle mogą zbliżyć się do siebie na szczycie. Eliminuje dysbalans obustronny.' },
     ],
   },
@@ -33,7 +33,7 @@ export const EXERCISE_DATABASE = [
     data: [
       { id: 'b1', name: 'Wiosłowanie sztangą',         difficulty: 'Średni',       equipment: 'Sztanga',  muscles: ['Najszerszy grzbietu', 'Trapez', 'Romboid'], synergists: ['Tylny bark', 'Biceps'],    alternatives: ['b4', 'b5'], image: 'https://via.placeholder.com/50/2C2C2E/636366?text=WS', description: 'Tułów pochylony ~45°, plecy płaskie – neutralna krzywizna kręgosłupa. Przyciągaj do brzucha prowadząc łokcie blisko tułowia. Kontroluj ekscentrykę.' },
       { id: 'b2', name: 'Martwy ciąg',                 difficulty: 'Zaawansowany', equipment: 'Sztanga',  muscles: ['Prostowniki pleców', 'Pośladki', 'Czworogłowy'], synergists: ['Trapez', 'Biceps'],   alternatives: [],           image: 'https://via.placeholder.com/50/2C2C2E/636366?text=MC', description: 'Stopy na szerokość bioder, sztanga nad środkiem stopy. Napnij core i najszersze przed zdjęciem ciężaru. Prostuj nogi i biodra jednocześnie utrzymując plecy płaskie.' },
-      { id: 'b3', name: 'Podciąganie na drążku',       difficulty: 'Średni',       equipment: 'Drążek',   muscles: ['Najszerszy grzbietu', 'Biceps'],             synergists: ['Tylny bark'],             alternatives: ['b5'],       image: 'https://via.placeholder.com/50/2C2C2E/636366?text=PD', description: 'Chwyć nachwytem na szerokość barków. Inicjuj ruch depresją łopatek. Podciągaj aż broda przekroczy drążek, ekscentryka 2–3 sekundy.' },
+      { id: 'b3', name: 'Podciąganie na drążku',       difficulty: 'Średni',       equipment: 'Drążek',   muscles: ['Najszerszy grzbietu', 'Biceps'],             synergists: ['Tylny bark'],             alternatives: ['b5'],       image: 'https://via.placeholder.com/50/2C2C2E/636366?text=PD', description: 'Chwyć nachwytem na szerokość barków. Inicjuj ruch depresją łopatek. Podciągaj aż broda przekroczy drążek, ekscentryka 2–3 sekundy.', exerciseType: 'bodyweight_weighted' },
       { id: 'b4', name: 'Wiosłowanie hantlem',         difficulty: 'Łatwy',        equipment: 'Hantle',   muscles: ['Najszerszy grzbietu', 'Romboid'],            synergists: ['Biceps'],                 alternatives: ['b1'],       image: 'https://via.placeholder.com/50/2C2C2E/636366?text=WH', description: 'Praca jednostronna eliminuje kompensacje. Oprzyj kolano i rękę na ławce. Przyciągaj hantel do biodra łokciem ku górze.' },
       { id: 'b5', name: 'Ściąganie wyciągu górnego',   difficulty: 'Łatwy',        equipment: 'Wyciąg',   muscles: ['Najszerszy grzbietu'],                       synergists: ['Biceps', 'Tylny bark'],   alternatives: ['b3'],       image: 'https://via.placeholder.com/50/2C2C2E/636366?text=SW', description: 'Ściągaj drążek do obojczyków prowadząc łokcie w dół i do tyłu. Nie odchylaj tułowia – ruch wyłącznie w stawach ramiennych.' },
     ],
@@ -296,7 +296,6 @@ export default function ExercisesLibraryScreen({ navigation, route }) {
   const [detailEx, setDetailEx]       = useState(null);
   const [creatorMode, setCreatorMode] = useState(!selectMode && false);
   const [selectedIds, setSelectedIds] = useState(new Set());
-  const [planModal, setPlanModal]     = useState(false);
 
   const filteredSections = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -317,15 +316,11 @@ export default function ExercisesLibraryScreen({ navigation, route }) {
     });
   };
 
-  const handleSavePlan = (planName) => {
-    // Zapisujemy PEŁNE obiekty ćwiczeń – nie tylko ID – żeby ActiveWorkoutScreen
-    // mógł odtworzyć dokładnie wybrany zestaw bez losowania
+  const handleGoToPlanCreator = () => {
     const exercises = EXERCISE_DATABASE.flatMap((s) => s.data).filter((ex) => selectedIds.has(ex.id));
-    addCustomPlan({ name: planName, exercises });
-    setPlanModal(false);
     setCreatorMode(false);
     setSelectedIds(new Set());
-    navigation.goBack();
+    navigation.navigate('PlanCreator', { exercises });
   };
 
   // Obsługa wyboru ćwiczenia w trybie zamiany (selectMode)
@@ -458,8 +453,8 @@ export default function ExercisesLibraryScreen({ navigation, route }) {
       )}
 
       {creatorMode && selectedIds.size > 0 && (
-        <TouchableOpacity style={styles.fab} onPress={() => setPlanModal(true)} activeOpacity={0.85}>
-          <Text style={styles.fabText}>Dalej (Zaznaczono: {selectedIds.size})</Text>
+        <TouchableOpacity style={styles.fab} onPress={handleGoToPlanCreator} activeOpacity={0.85}>
+          <Text style={styles.fabText}>Dalej — ułóż kolejność ({selectedIds.size})</Text>
           <Ionicons name="arrow-forward" size={18} color="#000" />
         </TouchableOpacity>
       )}
@@ -471,7 +466,6 @@ export default function ExercisesLibraryScreen({ navigation, route }) {
         onSelect={handleSelectForSwap}
         selectMode={selectMode}
       />
-      <PlanNameModal visible={planModal} count={selectedIds.size} onSave={handleSavePlan} onClose={() => setPlanModal(false)} />
     </View>
   );
 }
