@@ -401,14 +401,31 @@ function SSConnector({ color }) {
 // ─── Główny ekran ────────────────────────────────────────────────────────────
 export default function PlanCreatorScreen({ navigation, route }) {
   const { colors }        = useTheme();
-  const { addCustomPlan } = useWorkoutContext();
-  const initial           = route.params?.exercises ?? [];
+  const { addCustomPlan, updateCustomPlan } = useWorkoutContext();
+  const editPlanId      = route.params?.editPlanId ?? null;
+  const initial         = route.params?.exercises ?? [];
+
+  // Inicjalizacja exerciseData z istniejących planConfig gdy edytujemy
+  const buildInitialExData = (exercises) => {
+    const data = {};
+    exercises.forEach(ex => {
+      const cfg = ex.planConfig;
+      if (cfg?.setRows?.length) {
+        data[ex.id] = {
+          sets:  cfg.setRows.map(row => ({ id: uid(), weight: row.weight ?? '', reps: row.reps ?? '' })),
+          rest:  cfg.rest ?? null,
+          notes: cfg.notes ?? '',
+        };
+      }
+    });
+    return data;
+  };
 
   const [items,         setItems]         = useState(initial);
-  const [planName,      setPlanName]      = useState('');
+  const [planName,      setPlanName]      = useState(route.params?.initialPlanName ?? '');
   const [nameError,     setNameError]     = useState(false);
-  const [supersets,     setSupersets]     = useState({});
-  const [exerciseData,  setExerciseData]  = useState({});
+  const [supersets,     setSupersets]     = useState(route.params?.initialSupersets ?? {});
+  const [exerciseData,  setExerciseData]  = useState(() => buildInitialExData(initial));
 
   // Modals
   const [detailEx,       setDetailEx]       = useState(null);
@@ -560,10 +577,14 @@ export default function PlanCreatorScreen({ navigation, route }) {
         },
       };
     });
-    addCustomPlan({ name: planName.trim(), exercises: exercisesWithCfg, supersetGroups: supersets });
+    if (editPlanId) {
+      updateCustomPlan(editPlanId, { name: planName.trim(), exercises: exercisesWithCfg, supersetGroups: supersets });
+    } else {
+      addCustomPlan({ name: planName.trim(), exercises: exercisesWithCfg, supersetGroups: supersets });
+    }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     navigation.popToTop();
-  }, [items, exerciseData, planName, supersets, addCustomPlan, navigation, triggerShake]);
+  }, [items, exerciseData, planName, supersets, editPlanId, addCustomPlan, updateCustomPlan, navigation, triggerShake]);
 
   // ── Statystyki ───────────────────────────────────────────────────────────
   const totalSets    = items.reduce((sum, ex) => sum + (exerciseData[ex.id]?.sets.length ?? 3), 0);
@@ -579,7 +600,7 @@ export default function PlanCreatorScreen({ navigation, route }) {
           <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
             <Text style={[s.headerAction, { color: colors.textSecondary }]}>Anuluj</Text>
           </TouchableOpacity>
-          <Text style={s.headerTitle}>Kreator planu</Text>
+          <Text style={s.headerTitle}>{editPlanId ? 'Edytuj plan' : 'Kreator planu'}</Text>
           <TouchableOpacity
             style={[s.saveHeaderBtn, items.length === 0 && { opacity: 0.4 }]}
             disabled={items.length === 0}
