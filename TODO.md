@@ -19,11 +19,14 @@
 - [x] **Kreator Planu (Drag & Drop)**: Wyklikiwanie nowej rutyny z opcją wizualnego łączenia ćwiczeń "klamrami" dla super-serii.
 - [x] **Krzywa Zaniku 1RM**: Algorytm obniżający 1RM o 5% co 4 tygodnie przerwy (max -30%), z pulsującym ostrzeżeniem.
 - [x] **Pływający Widget 1RM**: Chip z Epley 1RM nad wierszami serii — rozwijany szczegółami (surowe 1RM, zanik, ostatni wynik).
-- [ ] **Widżety Live Activities**: Na zablokowanym ekranie: ćwiczenie, ciężar, seria i czas do następnego podejścia.
-- [ ] **Interaktywne Powiadomienia na Zegarek (Smartwatch Integration)**: Powiadomienia Push w tle na nadgarstek po rozpoczęciu przerwy z informacją o kolejnej serii.
+- [x] **Trwałość Danych (AsyncStorage)**: Plany użytkownika i historia treningów zapisywane lokalnie — przeżywają restart aplikacji.
+- [x] **PRCelebration (Konfetti PR)**: Animowany modal konfetti z haptyka wyskakujący w chwili pobicia rekordu osobistego podczas serii.
+- [x] **Zarządzaj Planami**: Tryb edycji szablonów — przyciski ✏️ Edytuj i 🗑️ Usuń na każdym planie; Kreator Planu obsługuje tryb aktualizacji istniejącego planu.
+- [x] **Widżety Live Activities**: Na zablokowanym ekranie: ćwiczenie, ciężar, seria i czas do następnego podejścia.
+- [x] **Interaktywne Powiadomienia na Zegarek (Smartwatch Integration)**: Powiadomienia Push w tle na nadgarstek po rozpoczęciu przerwy z informacją o kolejnej serii.
 
 ### Config / Feature Flags (Opcjonalne Moduły)
-- [ ] **RPE do RIR Translator**: Globalny przełącznik zmieniający skalę intensywności z klasycznego RPE (1-10) na RIR (powtórzenia w zapasie).
+- [x] **RPE do RIR Translator**: Globalny przełącznik w Profilu → Ustawienia zmieniający skalę intensywności z RPE (6–10) na RIR (powtórzenia w zapasie). Zapamiętany w AsyncStorage.
 - [ ] **Pogodowy Modyfikator Nawodnienia**: Integracja z API pogodowym, automatycznie podbijająca dobowy cel wody o 750 ml w upalne dni.
 - [ ] **Autoregulacja Rozgrzewki (RAMP)**: Automatyczne kalkulowanie i dodawanie serii rozgrzewkowych przed głównymi bojami wielostawowymi.
 - [ ] **Audio-Asystent w słuchawkach**: Lektor czytający w tle komunikaty o końcu przerwy oraz motywujący w trakcie serii.
@@ -67,13 +70,13 @@
 - [x] True Dark Mode i Global Design System.
 - [x] Zabezpieczenia UX (Alert przy usuwaniu) i segmentowy pasek postępu (Stories style).
 - [x] WorkoutContext (stan globalny), InteractionManager (eliminacja lagów).
-- [x] PRCelebration (konfetti + haptyka) — komponent gotowy, czeka na podpięcie.
+- [x] PRCelebration (konfetti + haptyka) — podpięte do ActiveWorkoutScreen, wykrywa PR przy zaliczeniu serii.
 - [x] **ThemeContext + system skórek** (`theme/themes.js`, `context/ThemeContext.js`, AsyncStorage). Pokrycie: TrainingScreen, DietScreen, ToolsScreen, ProfileScreen, ActiveWorkoutScreen, WorkoutHistoryScreen, ExercisesLibraryScreen, WorkoutSummaryModal. Dynamiczny tab bar i StatusBar.
 
 ### Moduł Treningowy
 - [x] **Tryb Krajobrazowy (Rack View)**: Overlay fullscreen z ogromnym timerem, ciężarem i seriami — aktywuje się automatycznie przy obróceniu ekranu.
 - [x] **Kalistenika Pro & Home Workout**: Tryb obciążenia (Sztanga / Waga ciała / Gumy oporowe / Hantle) per ćwiczenie — dostępny przez ⋯ menu; baner z instrukcją i wybieracz poziomu gumy.
-- [x] **Kreator Planu (Drag & Drop)**: PlanCreatorScreen — przeciąganie ćwiczeń za uchwyt ≡, klamry super-serii między ćwiczeniami, zapis jako własny plan. Kreator zapisuje kolejność i grupy SS do WorkoutContext. Własne plany usuwalne przez przytrzymanie kafelka.
+- [x] **Kreator Planu (Drag & Drop)**: PlanCreatorScreen — przeciąganie ćwiczeń za uchwyt ≡, klamry super-serii między ćwiczeniami, zapis jako własny plan. Kreator zapisuje kolejność i grupy SS do WorkoutContext. Własne plany usuwalne przez przytrzymanie kafelka lub tryb Zarządzaj. Obsługa edycji istniejących planów.
 - [x] Dashboard i Atlas (szablony, szybki start).
 - [x] Odizolowany Timer HUD (WorkoutTimerHUD) oraz RestTimerBanner.
 - [x] Parser NLP + slang ("zapas 2", normalizacja Unicode).

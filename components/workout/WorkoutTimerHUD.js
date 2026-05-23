@@ -1,27 +1,40 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { AppState, StyleSheet, Text } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
 
 const WorkoutTimerHUD = forwardRef(({ initialSec = 0 }, ref) => {
-  const [sec, setSec]   = useState(initialSec);
-  const secRef          = useRef(initialSec);
-  const intervalRef     = useRef(null);
-  const pausedRef       = useRef(false);
-  const { colors }      = useTheme();
+  const startMsRef    = useRef(Date.now() - initialSec * 1000);
+  const pausedRef     = useRef(false);
+  const pausedSecRef  = useRef(initialSec);
+  const intervalRef   = useRef(null);
+  const [sec, setSec] = useState(initialSec);
+  const { colors }    = useTheme();
 
-  useEffect(() => {
-    intervalRef.current = setInterval(() => {
-      if (!pausedRef.current) {
-        secRef.current += 1;
-        setSec((s) => s + 1);
-      }
-    }, 1000);
-    return () => clearInterval(intervalRef.current);
+  const computeSec = useCallback(() => {
+    if (pausedRef.current) return pausedSecRef.current;
+    return Math.max(0, Math.floor((Date.now() - startMsRef.current) / 1000));
   }, []);
 
+  const syncDisplay = useCallback(() => {
+    setSec(computeSec());
+  }, [computeSec]);
+
+  useEffect(() => {
+    intervalRef.current = setInterval(syncDisplay, 1000);
+    return () => clearInterval(intervalRef.current);
+  }, [syncDisplay]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') syncDisplay();
+    });
+    return () => sub.remove();
+  }, [syncDisplay]);
+
   useImperativeHandle(ref, () => ({
-    getSeconds: () => secRef.current,
+    getSeconds: computeSec,
     pause: () => {
+      pausedSecRef.current = computeSec();
       pausedRef.current = true;
       clearInterval(intervalRef.current);
     },

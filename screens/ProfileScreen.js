@@ -11,6 +11,9 @@ import { useState } from 'react';
 import { useWorkoutContext } from '../context/WorkoutContext';
 import { useTheme } from '../context/ThemeContext';
 import VolumeChart from '../components/profile/VolumeChart';
+import AnalyticsDashboard from '../components/profile/AnalyticsDashboard';
+import { SectionHeader } from '../components/profile/CardHeader';
+import { PROFILE_INFO } from '../constants/profileInfoTexts';
 
 const INITIAL_HABITS = [
   { id: '1', name: 'Kreatyna 5g', icon: 'fitness-outline',  done: true  },
@@ -179,7 +182,7 @@ const pickerStyles = StyleSheet.create({
 export default function ProfileScreen({ navigation }) {
   const [habits, setHabits]           = useState(INITIAL_HABITS);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
-  const { workoutHistory }            = useWorkoutContext();
+  const { workoutHistory, useRIR, toggleRIR } = useWorkoutContext();
   const { colors, themes, themeId }   = useTheme();
 
   const styles = makeStyles(colors);
@@ -205,6 +208,7 @@ export default function ProfileScreen({ navigation }) {
         </View>
 
         {/* Statystyki zbiorcze */}
+        <Text style={styles.sectionTitle}>Podsumowanie</Text>
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
             <Text style={styles.statVal}>{totalSessions}</Text>
@@ -234,7 +238,7 @@ export default function ProfileScreen({ navigation }) {
             <View style={styles.historyIconBox}>
               <Ionicons name="time-outline" size={22} color={colors.accent} />
             </View>
-            <View>
+            <View style={styles.historyTextBlock}>
               <Text style={styles.historyTitle}>Historia treningów</Text>
               <Text style={styles.historySub}>
                 {totalSessions > 0
@@ -249,22 +253,16 @@ export default function ProfileScreen({ navigation }) {
         {/* Wykresy objętości */}
         {totalSessions > 0 && (
           <View style={styles.chartSection}>
-            <Text style={styles.sectionTitle}>Statystyki objętości</Text>
+            <SectionHeader title="Statystyki objętości" infoBody={PROFILE_INFO.volume} />
             <VolumeChart />
           </View>
         )}
 
-        {/* Placeholder heatmapy */}
-        <View style={styles.heatmapPlaceholder}>
-          <Ionicons name="body-outline" size={52} color={colors.borderMuted} />
-          <Text style={styles.heatmapTitle}>Heatmapa sylwetki</Text>
-          <Text style={styles.heatmapSub}>
-            Po pierwszych treningach zaświeci się tu mapa{'\n'}najczęściej trenowanych partii ciała
-          </Text>
-        </View>
+        {/* Moduł Profil i Analityka */}
+        <AnalyticsDashboard habits={habits} />
 
         {/* Nawyki */}
-        <Text style={styles.sectionTitle}>Codzienne nawyki</Text>
+        <SectionHeader title="Codzienne nawyki" infoBody={PROFILE_INFO.habits} />
         {habits.map((habit) => (
           <TouchableOpacity
             key={habit.id}
@@ -288,7 +286,7 @@ export default function ProfileScreen({ navigation }) {
         ))}
 
         {/* Ustawienia */}
-        <Text style={[styles.sectionTitle, styles.sectionTitleSpaced]}>Ustawienia</Text>
+        <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Ustawienia</Text>
 
         {/* Motyw aplikacji — aktywny selektor */}
         <TouchableOpacity
@@ -305,6 +303,30 @@ export default function ProfileScreen({ navigation }) {
           <View style={styles.settingRight}>
             <Text style={[styles.settingValue, { color: colors.accent }]}>{activeThemeLabel}</Text>
             <Ionicons name="chevron-forward" size={18} color={colors.borderMuted} />
+          </View>
+        </TouchableOpacity>
+
+        {/* Skala intensywności RPE / RIR */}
+        <TouchableOpacity
+          style={styles.settingCard}
+          activeOpacity={0.7}
+          onPress={toggleRIR}
+        >
+          <View style={styles.settingLeft}>
+            <View style={[styles.settingIconWrapper, { backgroundColor: useRIR ? 'rgba(0,230,118,0.15)' : colors.border }]}>
+              <Ionicons name="flame-outline" size={20} color={useRIR ? '#00E676' : colors.textSecondary} />
+            </View>
+            <View>
+              <Text style={styles.settingName}>Skala intensywności</Text>
+              <Text style={[styles.settingDesc, { color: colors.textSecondary }]}>
+                {useRIR ? 'RIR — powtórzenia w zapasie' : 'RPE — skala wysiłku 6–10'}
+              </Text>
+            </View>
+          </View>
+          <View style={[styles.rirToggle, { backgroundColor: useRIR ? '#00E676' : colors.border }]}>
+            <Text style={[styles.rirToggleText, { color: useRIR ? '#000' : colors.textSecondary }]}>
+              {useRIR ? 'RIR' : 'RPE'}
+            </Text>
           </View>
         </TouchableOpacity>
 
@@ -349,24 +371,14 @@ const makeStyles = (c) => StyleSheet.create({
     borderWidth: 0.5, borderColor: c.accentSoft,
   },
   historyLeft:    { flexDirection: 'row', alignItems: 'center', flex: 1, gap: 14 },
+  historyTextBlock: { flex: 1 },
   historyIconBox: { width: 44, height: 44, borderRadius: 13, backgroundColor: c.accentSoft, justifyContent: 'center', alignItems: 'center' },
   historyTitle:   { fontSize: 15, fontWeight: '600', color: c.textPrimary },
   historySub:     { fontSize: 12, color: c.textSecondary, marginTop: 3 },
 
   chartSection: { marginBottom: 24 },
 
-  heatmapPlaceholder: {
-    backgroundColor: c.card, marginHorizontal: 16, marginBottom: 28,
-    borderRadius: 20, height: 180,
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1, borderColor: c.border, borderStyle: 'dashed',
-    gap: 10, paddingHorizontal: 24,
-  },
-  heatmapTitle: { fontSize: 16, fontWeight: '500', color: c.borderMuted },
-  heatmapSub:   { fontSize: 13, color: c.borderMuted, textAlign: 'center', lineHeight: 19 },
-
   sectionTitle:       { fontSize: 20, fontWeight: '600', color: c.textPrimary, paddingHorizontal: 20, marginBottom: 12 },
-  sectionTitleSpaced: { marginTop: 24 },
 
   habitCard:       { flexDirection: 'row', alignItems: 'center', backgroundColor: c.card, marginHorizontal: 16, marginBottom: 10, borderRadius: 18, padding: 16, borderWidth: 0.5, borderColor: c.border, gap: 14 },
   checkbox:        { width: 26, height: 26, borderRadius: 8, borderWidth: 1.5, borderColor: c.borderMuted, justifyContent: 'center', alignItems: 'center' },
@@ -377,9 +389,12 @@ const makeStyles = (c) => StyleSheet.create({
   habitSub:        { fontSize: 12, color: c.textSecondary, marginTop: 3 },
 
   settingCard:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: c.card, marginHorizontal: 16, marginBottom: 10, borderRadius: 18, padding: 16, borderWidth: 0.5, borderColor: c.border },
-  settingLeft:        { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  settingLeft:        { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 },
   settingIconWrapper: { width: 36, height: 36, borderRadius: 10, backgroundColor: c.border, justifyContent: 'center', alignItems: 'center' },
   settingName:        { fontSize: 16, color: c.textPrimary },
+  settingDesc:        { fontSize: 11, marginTop: 2 },
   settingRight:       { flexDirection: 'row', alignItems: 'center', gap: 6 },
   settingValue:       { fontSize: 14, color: c.textSecondary },
+  rirToggle:          { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6, minWidth: 46, alignItems: 'center' },
+  rirToggleText:      { fontSize: 13, fontWeight: '700' },
 });

@@ -1,24 +1,54 @@
-import { Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRef, useState } from 'react';
 import { useWorkoutContext } from '../context/WorkoutContext';
 import { useTheme } from '../context/ThemeContext';
 
 const BUILTIN_TEMPLATES = [
-  { id: 'upper', tag: 'Góra ciała', title: 'Upper Power', meta: '5 ćwiczeń · klatka, barki, triceps, biceps' },
+  { id: 'upper', tag: 'Góra ciała', title: 'Upper Power',    meta: '5 ćwiczeń · klatka, barki, triceps, biceps' },
   { id: 'lower', tag: 'Dół ciała',  title: 'Lower Strength', meta: '4 ćwiczenia · nogi, pośladki, łydki' },
 ];
+
+// Dane ćwiczeń dla wbudowanych szablonów — używane do edycji w PlanCreator
+const BUILTIN_PLAN_EXERCISES = {
+  upper: [
+    { id: 'ex1',   name: 'Wyciskanie sztangi leżąc',  muscles: ['Klatka piersiowa', 'Triceps', 'Przedni bark'],          description: 'Opuść kontrolowanie do klatki, wypychaj eksplozywnie.', planConfig: { setRows: [{ weight: '80', reps: '8' }, { weight: '80', reps: '8' }, { weight: '80', reps: '6' }], rest: 120, notes: '', sets: 3, setTypes: ['N','N','N'], repsMin: null, repsMax: null, weight: '' } },
+    { id: 'ex2',   name: 'Wiosłowanie sztangą',        muscles: ['Najszerszy grzbietu', 'Biceps', 'Tylny bark'],          description: 'Tułów ~45°. Przyciągaj do brzucha.', planConfig: { setRows: [{ weight: '90', reps: '8' }, { weight: '90', reps: '8' }], rest: 90, notes: '', sets: 2, setTypes: ['N','N'], repsMin: null, repsMax: null, weight: '' } },
+    { id: 'ex3',   name: 'Wyciskanie żołnierskie',     muscles: ['Przedni bark', 'Boczny bark', 'Triceps'],               description: 'Sztanga na obojczykach. Wypychaj pionowo.', planConfig: { setRows: [{ weight: '60', reps: '8' }, { weight: '60', reps: '8' }], rest: 90, notes: '', sets: 2, setTypes: ['N','N'], repsMin: null, repsMax: null, weight: '' } },
+    { id: 'ex4',   name: 'Biceps Curl ze sztangą',     muscles: ['Biceps'],                                               description: 'Ramiona przy tułowiu. Uginaj do pełnego skurczu.', planConfig: { setRows: [{ weight: '40', reps: '10' }, { weight: '40', reps: '10' }], rest: 60, notes: '', sets: 2, setTypes: ['N','N'], repsMin: null, repsMax: null, weight: '' } },
+    { id: 'ex5',   name: 'Triceps Pushdown',           muscles: ['Triceps'],                                              description: 'Łokcie przy tułowiu. Prostuj do pełnego wyprostu.', planConfig: { setRows: [{ weight: '35', reps: '12' }, { weight: '35', reps: '12' }], rest: 60, notes: '', sets: 2, setTypes: ['N','N'], repsMin: null, repsMax: null, weight: '' } },
+  ],
+  lower: [
+    { id: 'ex_l1', name: 'Przysiad ze sztangą',        muscles: ['Czworogłowy', 'Pośladki', 'Dwugłowy uda'],             description: 'Zniżaj do co najmniej równoległości ud z podłożem.', planConfig: { setRows: [{ weight: '100', reps: '5' }, { weight: '100', reps: '5' }, { weight: '100', reps: '5' }], rest: 150, notes: '', sets: 3, setTypes: ['N','N','N'], repsMin: null, repsMax: null, weight: '' } },
+    { id: 'ex_l2', name: 'Hip Thrust',                 muscles: ['Pośladki', 'Dwugłowy uda'],                            description: 'Pchnij biodra ku górze do pełnego wyprostu.', planConfig: { setRows: [{ weight: '80', reps: '10' }, { weight: '80', reps: '10' }], rest: 120, notes: '', sets: 2, setTypes: ['N','N'], repsMin: null, repsMax: null, weight: '' } },
+  ],
+};
 
 const formatTime = (s) =>
   [Math.floor(s / 3600), Math.floor((s % 3600) / 60), s % 60]
     .map((v) => String(v).padStart(2, '0')).join(':');
 
 export default function TrainingScreen({ navigation }) {
-  const { activeWorkout, customPlans, deleteCustomPlan } = useWorkoutContext();
+  const { activeWorkout, customPlans, deleteCustomPlan, hiddenBuiltins, hideBuiltin } = useWorkoutContext();
   const { colors } = useTheme();
   const styles = makeStyles(colors);
+  const [manageMode, setManageMode] = useState(false);
+  const manageModeAnim = useRef(new Animated.Value(0)).current;
+
+  const toggleManageMode = () => {
+    const next = !manageMode;
+    setManageMode(next);
+    Animated.timing(manageModeAnim, {
+      toValue: next ? 1 : 0,
+      duration: 200,
+      useNativeDriver: false,
+    }).start();
+  };
+
+  const visibleBuiltins = BUILTIN_TEMPLATES.filter((t) => !hiddenBuiltins.includes(t.id));
 
   const allTemplates = [
-    ...BUILTIN_TEMPLATES,
+    ...visibleBuiltins,
     ...customPlans.map((p) => ({
       id:              p.id,
       tag:             'Mój plan',
@@ -31,30 +61,59 @@ export default function TrainingScreen({ navigation }) {
     })),
   ];
 
-  const confirmDeletePlan = (planId, planName) => {
+  const confirmDelete = (item) => {
     Alert.alert(
       'Usuń plan?',
-      `Czy na pewno chcesz usunąć\n„${planName}"?`,
+      `Czy na pewno chcesz usunąć\n„${item.title}"?`,
       [
         { text: 'Anuluj', style: 'cancel' },
-        { text: 'Usuń', style: 'destructive', onPress: () => deleteCustomPlan(planId) },
+        {
+          text: 'Usuń', style: 'destructive',
+          onPress: () => item.custom ? deleteCustomPlan(item.id) : hideBuiltin(item.id),
+        },
       ],
     );
   };
 
+  const handleEdit = (item) => {
+    if (item.custom) {
+      // Edycja istniejącego własnego planu
+      navigation.navigate('PlanCreator', {
+        editPlanId:       item.id,
+        initialPlanName:  item.title,
+        exercises:        item.exercises ?? [],
+        initialSupersets: item.supersetGroups ?? {},
+      });
+    } else {
+      // Edycja wbudowanego szablonu → tworzy nowy plan na jego podstawie
+      navigation.navigate('PlanCreator', {
+        initialPlanName: item.title,
+        exercises:       BUILTIN_PLAN_EXERCISES[item.id] ?? [],
+        initialSupersets: {},
+      });
+    }
+  };
+
   const renderTemplate = ({ item }) => (
     <TouchableOpacity
-      style={[styles.card, item.custom && styles.cardCustom]}
+      style={[
+        styles.card,
+        item.custom && styles.cardCustom,
+        manageMode && styles.cardManage,
+      ]}
       activeOpacity={0.7}
-      onPress={() => navigation.navigate('ActiveWorkout', {
-        templateId:       item.id,
-        templateName:     item.title,
-        customExercises:  item.exercises ?? null,
-        supersetGroups:   item.supersetGroups  ?? {},
-        supersetConfigs:  item.supersetConfigs ?? {},
-        customPlanId:     item.custom ? item.id : null,
-      })}
-      onLongPress={item.custom ? () => confirmDeletePlan(item.id, item.title) : undefined}
+      onPress={() => {
+        if (manageMode) return;
+        navigation.navigate('ActiveWorkout', {
+          templateId:       item.id,
+          templateName:     item.title,
+          customExercises:  item.exercises ?? null,
+          supersetGroups:   item.supersetGroups  ?? {},
+          supersetConfigs:  item.supersetConfigs ?? {},
+          customPlanId:     item.custom ? item.id : null,
+        });
+      }}
+      onLongPress={!manageMode ? () => confirmDelete(item) : undefined}
       delayLongPress={600}
     >
       <View style={styles.cardContent}>
@@ -64,12 +123,31 @@ export default function TrainingScreen({ navigation }) {
         <Text style={styles.cardTitle}>{item.title}</Text>
         <Text style={styles.cardMeta}>{item.meta}</Text>
       </View>
-      <View style={{ alignItems: 'center', gap: 4 }}>
-        <Ionicons name="chevron-forward" size={20} color={colors.borderMuted} />
-        {item.custom && (
-          <Text style={{ fontSize: 9, color: colors.textTertiary }}>przytrzymaj = usuń</Text>
-        )}
-      </View>
+
+      {manageMode ? (
+        <View style={styles.manageActions}>
+          <TouchableOpacity
+            style={styles.manageEditBtn}
+            onPress={() => handleEdit(item)}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="pencil-outline" size={18} color={colors.accent} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.manageDeleteBtn}
+            onPress={() => confirmDelete(item)}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="trash-outline" size={18} color={colors.danger} />
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={{ alignItems: 'center', gap: 4 }}>
+          <Ionicons name="chevron-forward" size={20} color={colors.borderMuted} />
+        </View>
+      )}
     </TouchableOpacity>
   );
 
@@ -127,8 +205,10 @@ export default function TrainingScreen({ navigation }) {
 
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Twoje szablony</Text>
-              <TouchableOpacity>
-                <Text style={styles.sectionLink}>Zarządzaj</Text>
+              <TouchableOpacity onPress={toggleManageMode} activeOpacity={0.7}>
+                <Text style={[styles.sectionLink, manageMode && styles.sectionLinkActive]}>
+                  {manageMode ? 'Gotowe ✓' : 'Zarządzaj'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -189,9 +269,10 @@ const makeStyles = (c) => StyleSheet.create({
   libraryTitle:       { fontSize: 15, fontWeight: '600', color: c.textPrimary },
   librarySub:         { fontSize: 12, color: c.textSecondary, marginTop: 3 },
 
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 12 },
-  sectionTitle:  { fontSize: 20, fontWeight: '600', color: c.textPrimary },
-  sectionLink:   { fontSize: 14, color: c.accent },
+  sectionHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 12 },
+  sectionTitle:     { fontSize: 20, fontWeight: '600', color: c.textPrimary },
+  sectionLink:      { fontSize: 14, color: c.accent },
+  sectionLinkActive:{ fontWeight: '700' },
 
   card: {
     flexDirection: 'row', alignItems: 'center',
@@ -201,7 +282,11 @@ const makeStyles = (c) => StyleSheet.create({
     borderWidth: 0.5, borderColor: c.border,
   },
   cardCustom:       { borderColor: c.librarySoft },
+  cardManage:       { borderColor: c.accent, borderWidth: 1 },
   cardContent:      { flex: 1 },
+  manageActions:    { flexDirection: 'row', gap: 6, alignItems: 'center' },
+  manageEditBtn:    { width: 36, height: 36, borderRadius: 10, backgroundColor: c.accentSoft, justifyContent: 'center', alignItems: 'center' },
+  manageDeleteBtn:  { width: 36, height: 36, borderRadius: 10, backgroundColor: c.dangerSoft, justifyContent: 'center', alignItems: 'center' },
   tagWrapper:       { alignSelf: 'flex-start', backgroundColor: c.accentSoft, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3, marginBottom: 8 },
   tagWrapperCustom: { backgroundColor: c.librarySoft },
   tagText:          { fontSize: 11, fontWeight: '500', color: c.accent },

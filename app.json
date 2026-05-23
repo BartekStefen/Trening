@@ -12,9 +12,13 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSUserNotificationUsageDescription": "Powiadomienia o końcu przerwy i postępie treningu."
+      }
     },
     "android": {
+      "permissions": ["RECEIVE_BOOT_COMPLETED", "VIBRATE"],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

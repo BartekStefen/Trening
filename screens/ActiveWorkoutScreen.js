@@ -1,10 +1,12 @@
 import { Accelerometer } from 'expo-sensors';
+import * as ScreenOrientation from 'expo-screen-orientation';
+import { useFocusEffect } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   useCallback, useEffect, useMemo, useRef, useState, memo,
 } from 'react';
 import {
-  Alert, Animated, Image, InteractionManager, Keyboard, KeyboardAvoidingView,
+  Alert, Animated, AppState, Image, InteractionManager, Keyboard, KeyboardAvoidingView,
   Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity,
   useWindowDimensions, View,
 } from 'react-native';
@@ -16,6 +18,7 @@ import RestTimerBanner         from '../components/workout/RestTimerBanner';
 import WorkoutTimerHUD         from '../components/workout/WorkoutTimerHUD';
 import MuscleDistributionModal from '../components/modals/MuscleDistributionModal';
 import SwipeableSetRow         from '../components/workout/SwipeableSetRow';
+import RepsModeSheet             from '../components/workout/RepsModeSheet';
 import RestPickerModal         from '../components/modals/RestPickerModal';
 import SwapExerciseModal       from '../components/modals/SwapExerciseModal';
 import WorkoutSummaryModal     from '../components/modals/WorkoutSummaryModal';
@@ -25,11 +28,21 @@ import ExerciseHistoryModal    from '../components/workout/ExerciseHistoryModal'
 import AddCustomExerciseModal  from '../components/workout/AddCustomExerciseModal';
 import ExerciseActionsModal    from '../components/modals/ExerciseActionsModal';
 import MachineSettingsModal   from '../components/workout/MachineSettingsModal';
+import PRCelebration          from '../components/workout/PRCelebration';
 import LoadModeModal, { LOAD_MODES } from '../components/workout/LoadModeModal';
-import SetTypeButton, { resolveSetType, cycleSetType } from '../components/workout/SetTypeButton';
 import useMuscleHeatmap       from '../hooks/useMuscleHeatmap';
 import useBodyWeight          from '../hooks/useBodyWeight';
 import LiveMuscleMap          from '../components/LiveMuscleMap';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  setupWorkoutNotifications,
+  scheduleRestEndNotification,
+  cancelRestEndNotification,
+  showWorkoutLockScreenNotification,
+  dismissWorkoutLockScreenNotification,
+  cancelAllWorkoutNotifications,
+} from '../components/workout/WorkoutNotificationService';
+import { parseRepsString, repsForVolume } from '../utils/repsUtils';
 
 const GYM_KEYWORDS = [
   'kg','kilo','powt','rep','rpe','rir','zapas','seri','max','maksa','pr','rekord',
@@ -51,11 +64,12 @@ const fmtDur = (s) => {
 // ZADANIE 3: HUD z flexbox justify="space-evenly" – równomierny rozkład + wyśrodkowana ikonka
 const WorkoutHUD = memo(({ exercises, heatmap, onMuscleMapPress, timerRef, initialSec }) => {
   const { colors } = useTheme();
+  const { useRIR }  = useWorkoutContext();
   const hudStyles = makeHudStyles(colors);
   const tonnage = useMemo(() =>
     exercises.reduce((acc, ex) =>
       acc + ex.sets.reduce((s, set) =>
-        set.done ? s + (parseFloat(set.kg) || 0) * (parseInt(set.reps) || 0) : s, 0
+        set.done ? s + (parseFloat(set.kg) || 0) * repsForVolume(set.reps) : s, 0
       ), 0), [exercises]);
 
   const avgRpe = useMemo(() => {
@@ -67,6 +81,15 @@ const WorkoutHUD = memo(({ exercises, heatmap, onMuscleMapPress, timerRef, initi
   }, [exercises]);
 
   const rpeHigh = avgRpe !== null && parseFloat(avgRpe) > 8.0;
+
+  const intensityLabel = useMemo(() => {
+    if (avgRpe === null) return '—';
+    if (useRIR) {
+      const avgRir = Math.max(0, Math.round(10 - parseFloat(avgRpe)));
+      return `RIR ${avgRir}`;
+    }
+    return `RPE ${avgRpe}`;
+  }, [avgRpe, useRIR]);
 
   return (
     <View style={hudStyles.wrapper}>
@@ -88,7 +111,7 @@ const WorkoutHUD = memo(({ exercises, heatmap, onMuscleMapPress, timerRef, initi
         <View style={hudStyles.cell}>
           <Ionicons name="flame" size={10} color={rpeHigh ? '#FF5252' : '#EF9F27'} />
           <Text style={[hudStyles.valWhite, rpeHigh && { color: '#FF5252' }]}>
-            {avgRpe !== null ? `RPE ${avgRpe}` : '—'}
+            {intensityLabel}
           </Text>
         </View>
 
@@ -280,19 +303,26 @@ const convertLibraryExercise = (ex, index) => {
 
   // Nowy format z indywidualnymi seriami (setRows)
   if (cfg?.setRows?.length) {
+    const isRange = cfg.repsMode === 'range';
     return {
       ...base,
-      sets: cfg.setRows.map((row, i) => ({
-        id:          `cs_${ex.id}_${i + 1}_${Date.now() + i}`,
-        prevLog:     '—',
-        kg:          row.weight ?? '',
-        reps:        row.reps ?? '',
-        rpe:         '',
-        done:        false,
-        suggested:   null,
-        aiSuggested: false,
-        setType:     'N',
-      })),
+      sets: cfg.setRows.map((row, i) => {
+        const rowReps = row.reps ?? '';
+        const suggested = isRange && rowReps
+          ? `${rowReps.replace('-', '–')} pow.`
+          : null;
+        return {
+          id:          `cs_${ex.id}_${i + 1}_${Date.now() + i}`,
+          prevLog:     '—',
+          kg:          row.weight ?? '',
+          reps:        rowReps,
+          rpe:         '',
+          done:        false,
+          suggested,
+          aiSuggested: false,
+          setType:     'N',
+        };
+      }),
     };
   }
 
@@ -300,11 +330,16 @@ const convertLibraryExercise = (ex, index) => {
   const setCount  = cfg?.sets ?? 3;
   const setTypes  = cfg?.setTypes ?? [];
   const prefillKg = cfg?.weight ?? '';
-  const prefillReps = cfg?.repsMin ? String(cfg.repsMin) : '';
-  const suggested   = cfg?.repsMin && cfg?.repsMax ? `${cfg.repsMin}–${cfg.repsMax} pow.` : null;
+  const hasLegacyRange = cfg?.repsMin && cfg?.repsMax;
+  const prefillReps = hasLegacyRange
+    ? `${cfg.repsMin}-${cfg.repsMax}`
+    : (cfg?.repsMin ? String(cfg.repsMin) : '');
+  const suggested   = hasLegacyRange ? `${cfg.repsMin}–${cfg.repsMax} pow.` : null;
+  const legacyRepsMode = hasLegacyRange ? 'range' : (cfg?.repsMode ?? 'single');
 
   return {
     ...base,
+    planConfig: { ...cfg, repsMode: legacyRepsMode },
     sets: Array.from({ length: setCount }, (_, i) => ({
       id:          `cs_${ex.id}_${i + 1}_${Date.now() + i}`,
       prevLog:     '—',
@@ -322,7 +357,7 @@ const convertLibraryExercise = (ex, index) => {
 // ─── Epley 1RM: waga × (1 + powt/30) ────────────────────────────────────────
 const calcEpley1RM = (kg, reps) => {
   const w = parseFloat(kg);
-  const r = parseInt(reps);
+  const r = repsForVolume(reps);
   if (!w || !r || r <= 0) return null;
   if (r === 1) return w;
   return Math.round(w * (1 + r / 30) * 2) / 2;
@@ -359,10 +394,10 @@ const OneRMWidget = memo(function OneRMWidget({ sets, lastPerformedDate, colors 
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   const bestSet = useMemo(() => {
-    const done = sets.filter((s) => s.done && parseFloat(s.kg) > 0 && parseInt(s.reps) > 0);
+    const done = sets.filter((s) => s.done && parseFloat(s.kg) > 0 && repsForVolume(s.reps) > 0);
     if (!done.length) {
       // Jeśli nic nie zaliczone — bierz pierwszy wiersz z wypełnionymi danymi
-      return sets.find((s) => parseFloat(s.kg) > 0 && parseInt(s.reps) > 0) ?? null;
+      return sets.find((s) => parseFloat(s.kg) > 0 && repsForVolume(s.reps) > 0) ?? null;
     }
     return done.reduce((best, s) => {
       const orm = calcEpley1RM(s.kg, s.reps);
@@ -806,9 +841,11 @@ const ExerciseCard = memo(function ExerciseCard({
   onToggleSuperset,
   bodyWeight,
   onUpdateBodyWeight,
+  onRepsModeChange,
 }) {
   const isBWWeighted = exercise.exerciseType === 'bodyweight_weighted';
   const { colors } = useTheme();
+  const { useRIR }  = useWorkoutContext();
   const cardStyles = makeCardStyles(colors);
   const [restModal, setRestModal]                   = useState(false);
   const [swapModal, setSwapModal]                   = useState(false);
@@ -817,6 +854,7 @@ const ExerciseCard = memo(function ExerciseCard({
   const [historyVisible, setHistoryVisible]         = useState(false);
   const [machineSettingsVisible, setMachineSettingsVisible] = useState(false);
   const [loadModeVisible, setLoadModeVisible]       = useState(false);
+  const [repsModeSheetVisible, setRepsModeSheetVisible] = useState(false);
   const [bandLevel, setBandLevel]                   = useState('medium'); // dla trybu gumy
 
   const loadMode = exercise.loadMode ?? 'barbell';
@@ -845,6 +883,8 @@ const ExerciseCard = memo(function ExerciseCard({
   // ZADANIE 4: limit 3 drop-setów per ćwiczenie
   const dropSetCount     = exercise.sets.filter((s) => s.isDropSet).length;
   const dropSetLimitReached = dropSetCount >= 3;
+  const repsMode = exercise.planConfig?.repsMode ?? 'single';
+  const isRepsRangeMode = repsMode === 'range';
 
   const confirmDeleteExercise = () => {
     Alert.alert(
@@ -977,9 +1017,9 @@ const ExerciseCard = memo(function ExerciseCard({
       />
 
       <View style={cardStyles.colHeaders}>
-        <View style={{ width: 36 }} />
+        <View style={{ width: 20 }} />
         <View style={{ flex: 1 }}><Text style={cardStyles.colH}>Poprzednio</Text></View>
-        <Text style={[cardStyles.colH, { width: 46, textAlign: 'center' }]}>RPE</Text>
+        <Text style={[cardStyles.colH, { width: 46, textAlign: 'center' }]}>{useRIR ? 'RIR' : 'RPE'}</Text>
         {isBWWeighted ? (
           <Text style={[cardStyles.colH, { width: 104, textAlign: 'center', color: colors.accent }]}>
             👤BW + ⚙️ Dodane
@@ -987,7 +1027,16 @@ const ExerciseCard = memo(function ExerciseCard({
         ) : (
           <Text style={[cardStyles.colH, { width: 46, textAlign: 'center' }]}>kg</Text>
         )}
-        <Text style={[cardStyles.colH, { width: 52, textAlign: 'center' }]}>Powt.</Text>
+        <TouchableOpacity
+          style={[cardStyles.colRepsBtn, { width: isRepsRangeMode ? 88 : 52 }]}
+          onPress={() => setRepsModeSheetVisible(true)}
+          activeOpacity={0.7}
+        >
+          <Text style={[cardStyles.colH, { textAlign: 'center' }]}>
+            {isRepsRangeMode ? 'Zakres' : 'Powt.'}
+          </Text>
+          <Ionicons name="chevron-down" size={10} color={colors.textTertiary} />
+        </TouchableOpacity>
         <Text style={[cardStyles.colH, { width: 44, textAlign: 'center' }]}>✓</Text>
       </View>
 
@@ -999,7 +1048,6 @@ const ExerciseCard = memo(function ExerciseCard({
           totalSets={exercise.sets.length}
           progression={progression}
           onUpdate={(field, value) => onUpdateSet(exIndex, set.id, field, value)}
-          onCycleSetType={() => onUpdateSet(exIndex, set.id, 'setType', cycleSetType(resolveSetType(set.setType, set.isDropSet)))}
           onToggleComplete={() => onToggleSet(exIndex, set.id)}
           onDeleteSet={() => onDeleteSet(exIndex, set.id)}
           onDeleteExercise={confirmDeleteExercise}
@@ -1008,6 +1056,7 @@ const ExerciseCard = memo(function ExerciseCard({
           isBWWeighted={isBWWeighted}
           bodyWeight={bodyWeight}
           onUpdateBodyWeight={onUpdateBodyWeight}
+          repsMode={repsMode}
         />
       ))}
 
@@ -1096,6 +1145,14 @@ const ExerciseCard = memo(function ExerciseCard({
         onSelect={(mode) => onChangeLoadMode?.(exIndex, mode)}
         onClose={() => setLoadModeVisible(false)}
       />
+
+      <RepsModeSheet
+        visible={repsModeSheetVisible}
+        currentMode={repsMode}
+        onSelect={(mode) => onRepsModeChange(exIndex, mode)}
+        onClose={() => setRepsModeSheetVisible(false)}
+        colors={colors}
+      />
     </Animated.View>
   );
 });
@@ -1115,6 +1172,7 @@ const makeCardStyles = (c) => StyleSheet.create({
   restChipText:  { fontSize: 12, color: c.textSecondary, fontWeight: '500' },
   colHeaders:    { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 6 },
   colH:          { fontSize: 10, color: c.textTertiary, fontWeight: '500', letterSpacing: 0.3 },
+  colRepsBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2 },
   divider:       { height: 0.5, backgroundColor: c.border, marginVertical: 12 },
   actions:       { flexDirection: 'row', gap: 8, alignItems: 'center' },
   actionBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 12, paddingVertical: 10, borderWidth: 1 },
@@ -1129,14 +1187,33 @@ const makeCardStyles = (c) => StyleSheet.create({
 
 // ─── Tryb Krajobrazowy (Rack View) ───────────────────────────────────────────
 const RackView = memo(function RackView({ exercises, timerRef, restActive, restDuration, restKey, colors }) {
+  const insets = useSafeAreaInsets();
   const [elapsedSec, setElapsedSec] = useState(0);
-  const pulse = useRef(new Animated.Value(1)).current;
+  const [restSec, setRestSec]       = useState(restDuration);
+  const endsAtRef                   = useRef(Date.now() + restDuration * 1000);
 
-  // Odświeżaj timer co sekundę
   useEffect(() => {
     const iv = setInterval(() => setElapsedSec(timerRef.current?.getSeconds() ?? 0), 1000);
     return () => clearInterval(iv);
   }, [timerRef]);
+
+  useEffect(() => {
+    if (!restActive) return undefined;
+    endsAtRef.current = Date.now() + restDuration * 1000;
+    setRestSec(restDuration);
+    const syncRest = () => {
+      setRestSec(Math.max(0, Math.ceil((endsAtRef.current - Date.now()) / 1000)));
+    };
+    syncRest();
+    const iv = setInterval(syncRest, 500);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') syncRest();
+    });
+    return () => {
+      clearInterval(iv);
+      sub.remove();
+    };
+  }, [restActive, restDuration, restKey]);
 
   // Znajdź pierwszą niezaliczoną serię
   const nextSet = useMemo(() => {
@@ -1161,7 +1238,7 @@ const RackView = memo(function RackView({ exercises, timerRef, restActive, restD
   const tonnage = useMemo(() =>
     exercises.reduce((acc, ex) =>
       acc + ex.sets.reduce((s, set) =>
-        set.done ? s + (parseFloat(set.kg) || 0) * (parseInt(set.reps) || 0) : s, 0), 0),
+        set.done ? s + (parseFloat(set.kg) || 0) * repsForVolume(set.reps) : s, 0), 0),
     [exercises]);
 
   const doneSets = exercises.reduce((a, ex) => a + ex.sets.filter((s) => s.done).length, 0);
@@ -1172,87 +1249,130 @@ const RackView = memo(function RackView({ exercises, timerRef, restActive, restD
     return `${String(m).padStart(2, '0')}:${String(sc).padStart(2, '0')}`;
   };
 
-  const rackStyles = makeRackStyles(colors);
+  const rackStyles = makeRackStyles(colors, insets);
 
   return (
     <View style={rackStyles.overlay}>
-      {/* Timer */}
-      <Text style={rackStyles.timerLabel}>CZAS TRENINGU</Text>
-      <Text style={rackStyles.timer}>{fmtTime(elapsedSec)}</Text>
-
-      {/* Aktualne ćwiczenie */}
-      {nextSet ? (
-        <>
-          <Text style={rackStyles.exerciseName} numberOfLines={2}>{nextSet.exName}</Text>
-          <Text style={rackStyles.muscles}>{nextSet.muscles}</Text>
-          <View style={rackStyles.setRow}>
-            <View style={rackStyles.dataBlock}>
-              <Text style={rackStyles.dataLabel}>CIĘŻAR</Text>
-              <Text style={rackStyles.dataValue}>{nextSet.kg}<Text style={rackStyles.dataUnit}> kg</Text></Text>
-            </View>
-            <View style={rackStyles.dataSep} />
-            <View style={rackStyles.dataBlock}>
-              <Text style={rackStyles.dataLabel}>POWTÓRZENIA</Text>
-              <Text style={rackStyles.dataValue}>{nextSet.reps}<Text style={rackStyles.dataUnit}> ×</Text></Text>
-            </View>
-            <View style={rackStyles.dataSep} />
-            <View style={rackStyles.dataBlock}>
-              <Text style={rackStyles.dataLabel}>SERIA</Text>
-              <Text style={rackStyles.dataValue}>{nextSet.setNum}<Text style={rackStyles.dataUnit}>/{nextSet.totalSets}</Text></Text>
-            </View>
+      <View style={rackStyles.topBar}>
+        <View style={rackStyles.timerBlock}>
+          <Text style={rackStyles.timerLabel}>CZAS TRENINGU</Text>
+          <Text style={rackStyles.timer} adjustsFontSizeToFit numberOfLines={1}>{fmtTime(elapsedSec)}</Text>
+        </View>
+        {restActive && (
+          <View style={rackStyles.restBlock}>
+            <Text style={rackStyles.restLabel}>PRZERWA</Text>
+            <Text style={rackStyles.restTimer} adjustsFontSizeToFit numberOfLines={1}>{fmtTime(restSec)}</Text>
           </View>
-        </>
-      ) : (
-        <Text style={rackStyles.allDone}>✅ Wszystkie serie zaliczone!</Text>
-      )}
-
-      {/* Stopka — tonaż + ukończone serie */}
-      <View style={rackStyles.footer}>
-        <View style={rackStyles.footerItem}>
-          <Ionicons name="barbell-outline" size={14} color={colors.textTertiary} />
-          <Text style={rackStyles.footerText}>{tonnage} kg łączny tonaż</Text>
-        </View>
-        <View style={rackStyles.footerItem}>
-          <Ionicons name="checkmark-circle-outline" size={14} color={colors.textTertiary} />
-          <Text style={rackStyles.footerText}>{doneSets}/{totalSets} serii</Text>
-        </View>
+        )}
       </View>
 
-      <Text style={rackStyles.hint}>Obróć telefon pionowo, by wrócić</Text>
+      <View style={rackStyles.main}>
+        {nextSet ? (
+          <>
+            <Text style={rackStyles.exerciseName} numberOfLines={2}>{nextSet.exName}</Text>
+            <Text style={rackStyles.muscles} numberOfLines={1}>{nextSet.muscles}</Text>
+            <View style={rackStyles.setRow}>
+              <View style={rackStyles.dataBlock}>
+                <Text style={rackStyles.dataLabel}>CIĘŻAR</Text>
+                <Text style={rackStyles.dataValue} adjustsFontSizeToFit numberOfLines={1}>
+                  {nextSet.kg}<Text style={rackStyles.dataUnit}> kg</Text>
+                </Text>
+              </View>
+              <View style={rackStyles.dataSep} />
+              <View style={rackStyles.dataBlock}>
+                <Text style={rackStyles.dataLabel}>POWT.</Text>
+                <Text style={rackStyles.dataValue} adjustsFontSizeToFit numberOfLines={1}>
+                  {nextSet.reps}<Text style={rackStyles.dataUnit}> ×</Text>
+                </Text>
+              </View>
+              <View style={rackStyles.dataSep} />
+              <View style={rackStyles.dataBlock}>
+                <Text style={rackStyles.dataLabel}>SERIA</Text>
+                <Text style={rackStyles.dataValue} adjustsFontSizeToFit numberOfLines={1}>
+                  {nextSet.setNum}<Text style={rackStyles.dataUnit}>/{nextSet.totalSets}</Text>
+                </Text>
+              </View>
+            </View>
+          </>
+        ) : (
+          <Text style={rackStyles.allDone}>✅ Wszystkie serie zaliczone!</Text>
+        )}
+      </View>
+
+      <View style={rackStyles.bottomBar}>
+        <View style={rackStyles.footer}>
+          <View style={rackStyles.footerItem}>
+            <Ionicons name="barbell-outline" size={12} color={colors.textTertiary} />
+            <Text style={rackStyles.footerText}>{tonnage} kg</Text>
+          </View>
+          <View style={rackStyles.footerItem}>
+            <Ionicons name="checkmark-circle-outline" size={12} color={colors.textTertiary} />
+            <Text style={rackStyles.footerText}>{doneSets}/{totalSets} serii</Text>
+          </View>
+        </View>
+        <Text style={rackStyles.hint}>Obróć telefon pionowo, by wrócić</Text>
+      </View>
     </View>
   );
 });
 
-const makeRackStyles = (c) => StyleSheet.create({
+const makeRackStyles = (c, insets) => StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: c.background,
     zIndex: 9999,
+    paddingTop: Math.max(insets.top, 8),
+    paddingBottom: Math.max(insets.bottom, 8),
+    paddingHorizontal: 20,
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 28,
+    minHeight: 56,
+  },
+  timerBlock: { alignItems: 'center', minWidth: 120 },
+  restBlock:  { alignItems: 'center', minWidth: 100 },
+  main: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 40,
-    gap: 8,
+    paddingVertical: 4,
+    gap: 4,
   },
-  timerLabel:   { fontSize: 11, fontWeight: '700', color: c.textTertiary, letterSpacing: 2, marginBottom: -4 },
-  timer:        { fontSize: 96, fontWeight: '800', color: c.textPrimary, letterSpacing: 2, fontVariant: ['tabular-nums'] },
-  exerciseName: { fontSize: 28, fontWeight: '700', color: c.textPrimary, textAlign: 'center', marginTop: 8 },
-  muscles:      { fontSize: 14, color: c.textSecondary, textAlign: 'center', marginBottom: 16 },
+  bottomBar: {
+    alignItems: 'center',
+    gap: 4,
+    minHeight: 36,
+  },
+  timerLabel:   { fontSize: 9, fontWeight: '700', color: c.textTertiary, letterSpacing: 1.5 },
+  timer:        { fontSize: 44, fontWeight: '800', color: c.textPrimary, letterSpacing: 1, fontVariant: ['tabular-nums'], lineHeight: 48 },
+  restLabel:    { fontSize: 9, fontWeight: '700', color: c.accent, letterSpacing: 1.5 },
+  restTimer:    { fontSize: 36, fontWeight: '800', color: c.accent, letterSpacing: 1, fontVariant: ['tabular-nums'], lineHeight: 40 },
+  exerciseName: { fontSize: 18, fontWeight: '700', color: c.textPrimary, textAlign: 'center' },
+  muscles:      { fontSize: 11, color: c.textSecondary, textAlign: 'center', marginBottom: 6 },
   setRow: {
-    flexDirection: 'row', alignItems: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
     backgroundColor: c.backgroundSecondary,
-    borderRadius: 20, borderWidth: 0.5, borderColor: c.border,
-    paddingVertical: 20, paddingHorizontal: 24, gap: 0,
+    borderRadius: 14,
+    borderWidth: 0.5,
+    borderColor: c.border,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
-  dataBlock:  { flex: 1, alignItems: 'center', gap: 4 },
-  dataLabel:  { fontSize: 9, fontWeight: '700', color: c.textTertiary, letterSpacing: 1.5 },
-  dataValue:  { fontSize: 42, fontWeight: '800', color: c.accent, fontVariant: ['tabular-nums'] },
-  dataUnit:   { fontSize: 16, fontWeight: '600', color: c.textSecondary },
-  dataSep:    { width: 1, height: 60, backgroundColor: c.border },
-  allDone:    { fontSize: 28, fontWeight: '700', color: c.accent, textAlign: 'center' },
-  footer:     { flexDirection: 'row', gap: 24, marginTop: 20 },
-  footerItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  footerText: { fontSize: 13, color: c.textTertiary },
-  hint:       { fontSize: 11, color: c.borderMuted, marginTop: 12 },
+  dataBlock:  { flex: 1, alignItems: 'center', gap: 2 },
+  dataLabel:  { fontSize: 8, fontWeight: '700', color: c.textTertiary, letterSpacing: 1 },
+  dataValue:  { fontSize: 26, fontWeight: '800', color: c.accent, fontVariant: ['tabular-nums'] },
+  dataUnit:   { fontSize: 11, fontWeight: '600', color: c.textSecondary },
+  dataSep:    { width: 1, height: 36, backgroundColor: c.border },
+  allDone:    { fontSize: 18, fontWeight: '700', color: c.accent, textAlign: 'center' },
+  footer:     { flexDirection: 'row', gap: 16 },
+  footerItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  footerText: { fontSize: 11, color: c.textTertiary },
+  hint:       { fontSize: 10, color: c.borderMuted },
 });
 
 export default function ActiveWorkoutScreen({ navigation, route }) {
@@ -1261,6 +1381,16 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   const { width: winW, height: winH } = useWindowDimensions();
   const isLandscape = winW > winH;
   const [bodyWeight, updateBodyWeight] = useBodyWeight(80);
+
+  // Odblokuj obrót tylko na ekranie treningu (app.json ma portrait)
+  useFocusEffect(
+    useCallback(() => {
+      ScreenOrientation.unlockAsync().catch(() => {});
+      return () => {
+        ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+      };
+    }, []),
+  );
 
   const workoutName        = route?.params?.templateName ?? activeWorkout?.workoutName ?? 'Mój trening';
   const templateId         = route?.params?.templateId;
@@ -1309,6 +1439,7 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   const [infoVisible, setInfoVisible]       = useState(false);
   const [infoExercise, setInfoExercise]     = useState(null);
   const [summaryVisible, setSummaryVisible] = useState(false);
+  const [prData, setPRData]               = useState(null);
   const [muscleModalVisible, setMuscleModalVisible]       = useState(false);
   const [isPlateCalcVisible, setIsPlateCalcVisible]       = useState(false);
   const [selectedWeightForCalc, setSelectedWeightForCalc] = useState(0);
@@ -1325,6 +1456,20 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
     return () => task.cancel();
   }, []);
 
+  // ─── Powiadomienia: uprawnienia + czyszczenie przy odmontowaniu ──────────────
+  useEffect(() => {
+    setupWorkoutNotifications();
+    return () => {
+      cancelAllWorkoutNotifications();
+    };
+  }, []);
+
+  // ─── AppState: lock-screen widget przy zejściu w tło ────────────────────────
+  const appStateRef = useRef(AppState.currentState);
+  const restActiveRef = useRef(false);
+  const restDurationRef = useRef(120);
+  const restLabelRef = useRef('');
+
   useEffect(() => {
     Accelerometer.setUpdateInterval(300);
     const sub = Accelerometer.addListener(({ z }) => {
@@ -1337,20 +1482,60 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   const totalTonnage = useMemo(() =>
     exercises.reduce((acc, ex) =>
       acc + ex.sets.reduce((s, set) =>
-        set.done ? s + (parseFloat(set.kg) || 0) * (parseInt(set.reps) || 0) : s, 0
+        set.done ? s + (parseFloat(set.kg) || 0) * repsForVolume(set.reps) : s, 0
       ), 0), [exercises]);
   const doneSets = useMemo(() =>
     exercises.reduce((a, ex) => a + ex.sets.filter((s) => s.done).length, 0),
   [exercises]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      const wasActive = appStateRef.current === 'active';
+      const goingBackground = nextState === 'background' || nextState === 'inactive';
+      appStateRef.current = nextState;
+
+      if (wasActive && goingBackground) {
+        const currentEx = exercises.find((ex) => ex.sets.some((s) => !s.done))?.name
+          ?? exercises[exercises.length - 1]?.name
+          ?? null;
+        showWorkoutLockScreenNotification({
+          workoutName,
+          currentExercise: currentEx,
+          doneSets,
+          restSecondsLeft: restActiveRef.current ? restDurationRef.current : 0,
+        });
+      } else if (nextState === 'active') {
+        dismissWorkoutLockScreenNotification();
+      }
+    });
+    return () => sub.remove();
+  }, [exercises, workoutName, doneSets]);
 
   const showRestBanner = useCallback((label, duration) => {
     setRestLabel(label);
     setRestDuration(duration);
     setRestKey((k) => k + 1);
     setRestActive(true);
+    restActiveRef.current = true;
+    restDurationRef.current = duration;
+    restLabelRef.current = label;
+    // Wrist / smartwatch notification: fires when rest ends
+    const exerciseName = label.split(' – ')[0];
+    scheduleRestEndNotification(exerciseName, duration);
   }, []);
 
-  const hideRestBanner = useCallback(() => setRestActive(false), []);
+  const hideRestBanner = useCallback(() => {
+    setRestActive(false);
+    restActiveRef.current = false;
+    cancelRestEndNotification();
+  }, []);
+
+  const handleRestRemainingChange = useCallback((remaining) => {
+    restDurationRef.current = remaining;
+    if (remaining <= 0) return;
+    const exerciseName = restLabelRef.current.split(' – ')[0];
+    scheduleRestEndNotification(exerciseName, remaining);
+  }, []);
 
   const toggleHomeMode = useCallback(() => {
     if (homeTransitioning) return;
@@ -1402,6 +1587,13 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
         return prev.map((e, i) =>
           i !== exIdx ? e : { ...e, sets: e.sets.map((s) => s.id === setId ? { ...s, done: false } : s) }
         );
+      }
+      // Wykrywanie PR: nowe kg > poprzedni rekord z prevLog
+      const prevKg = parseFloat((set?.prevLog ?? '').split(' ')[0]);
+      const newKg  = parseFloat(set?.kg ?? '');
+      const hasPrevLog = set?.prevLog && set.prevLog !== '—' && !isNaN(prevKg) && prevKg > 0;
+      if (set && hasPrevLog && !isNaN(newKg) && newKg > prevKg) {
+        setTimeout(() => setPRData({ exerciseName: ex.name, newKg: set.kg, newReps: set.reps }), 150);
       }
       const si = ex.sets.findIndex((s) => s.id === setId);
       showRestBanner(`${ex.name} – s.${si + 1}`, ex.restDuration);
@@ -1465,6 +1657,26 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
 
   const handleRestChange = useCallback((exIdx, sec) => {
     setExercises((prev) => prev.map((ex, i) => i !== exIdx ? ex : { ...ex, restDuration: sec }));
+  }, []);
+
+  const handleRepsModeChange = useCallback((exIdx, mode) => {
+    setExercises((prev) => prev.map((ex, i) => {
+      if (i !== exIdx) return ex;
+      const sets = ex.sets.map((s) => {
+        const parsed = parseRepsString(s.reps);
+        if (mode === 'single') {
+          const val = parsed.mode === 'range' ? (parsed.min || parsed.max) : parsed.value;
+          return { ...s, reps: val };
+        }
+        if (parsed.mode === 'range') return s;
+        return { ...s, reps: parsed.value || '' };
+      });
+      return {
+        ...ex,
+        sets,
+        planConfig: { ...(ex.planConfig ?? {}), repsMode: mode },
+      };
+    }));
   }, []);
 
   const handleCascadeUpdate = useCallback((exIdx, setIdx, newKg, newReps, nextTrainingKg) => {
@@ -1626,6 +1838,16 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   const handleMinimize = () => {
     const currentSec = timerHudRef.current?.getSeconds() ?? 0;
     minimizeWorkout({ workoutName, timerSec: currentSec, doneSets, exercises });
+    // Lock-screen widget: show persistent notification with workout status
+    const currentEx = exercises.find((ex) => ex.sets.some((s) => !s.done))?.name
+      ?? exercises[exercises.length - 1]?.name
+      ?? null;
+    showWorkoutLockScreenNotification({
+      workoutName,
+      currentExercise: currentEx,
+      doneSets,
+      restSecondsLeft: restActiveRef.current ? restDurationRef.current : 0,
+    });
     navigation.goBack();
   };
 
@@ -1672,6 +1894,8 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   const handleFinish = () => {
     timerHudRef.current?.pause();
     setRestActive(false);
+    restActiveRef.current = false;
+    cancelAllWorkoutNotifications();
     setSummaryVisible(true);
   };
 
@@ -1814,6 +2038,7 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
                         onToggleSuperset={handleToggleSuperset}
                         bodyWeight={bodyWeight}
                         onUpdateBodyWeight={() => { setTempBW(String(bodyWeight)); setBWModalVisible(true); }}
+                        onRepsModeChange={handleRepsModeChange}
                       />
                       {showConnector && (
                         <SupersetConnector
@@ -1876,6 +2101,7 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
               label={restLabel}
               duration={restDuration}
               onDismiss={hideRestBanner}
+              onRemainingChange={handleRestRemainingChange}
             />
           )}
 
@@ -1919,6 +2145,15 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
                 setTimeout(() => checkProgressiveOverload(exercises, customPlanId), 600);
               }
             }}
+          />
+
+          {/* PR Celebration */}
+          <PRCelebration
+            visible={!!prData}
+            exerciseName={prData?.exerciseName}
+            newKg={prData?.newKg}
+            newReps={prData?.newReps}
+            onClose={() => setPRData(null)}
           />
 
           {/* Quick BW Update Modal */}

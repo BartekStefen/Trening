@@ -1145,7 +1145,7 @@ const makeStyles = (c) => StyleSheet.create({
 // ─── Style: ReorderModal ──────────────────────────────────────────────────────
 const makeReorderStyles = (c) => StyleSheet.create({
   overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  screen:     { borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '90%', minHeight: 200 },
+  screen:     { height: '92%', borderTopLeftRadius: 20, borderTopRightRadius: 20 },
   handle:     { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 12 },
   title:      { fontSize: 18, fontWeight: '700', textAlign: 'center', paddingVertical: 14, borderBottomWidth: 0.5 },
   list:       { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8 },

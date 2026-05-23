@@ -7,7 +7,8 @@ import { Swipeable } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../../context/ThemeContext';
-import SetTypeButton, { resolveSetType } from './SetTypeButton';
+import { useWorkoutContext } from '../../context/WorkoutContext';
+import { formatRepsString, parseRepsString, repsForVolume } from '../../utils/repsUtils';
 
 const GYM_KEYWORDS = [
   'kg','kilo','powt','rep','rpe','rir','zapas','seri','max','maksa','pr','rekord',
@@ -77,42 +78,61 @@ const ProgressArrow = ({ value, suggestedKg }) => {
 // ─── RPE Picker inline ────────────────────────────────────────────────────────
 const RPE_VALUES = ['6', '6.5', '7', '7.5', '8', '8.5', '9', '9.5', '10'];
 
-const RpeInlinePicker = ({ currentRpe, onSelect, onClose, colors }) => {
+const rpeToRir = (rpe) => {
+  const n = parseFloat(rpe);
+  return isNaN(n) ? null : Math.max(0, Math.round(10 - n));
+};
+
+const RpeInlinePicker = ({ currentRpe, onSelect, onClose, colors, useRIR }) => {
   const styles = makeStyles(colors);
   return (
     <View style={styles.rpePicker}>
       <View style={styles.rpePickerHeader}>
         <Ionicons name="flame-outline" size={13} color={colors.warning} />
-        <Text style={styles.rpePickerTitle}>RPE — wybierz intensywność</Text>
+        <Text style={styles.rpePickerTitle}>
+          {useRIR ? 'RIR — powtórzenia w zapasie' : 'RPE — wybierz intensywność'}
+        </Text>
         <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="close" size={16} color={colors.textTertiary} />
         </TouchableOpacity>
       </View>
       <View style={styles.rpePickerRow}>
-        {RPE_VALUES.map((val) => (
-          <TouchableOpacity
-            key={val}
-            style={[
-              styles.rpeBtn,
-              currentRpe === val && styles.rpeBtnActive,
-              parseFloat(val) >= 9.5 && styles.rpeBtnDanger,
-            ]}
-            onPress={() => { onSelect(val); onClose(); }}
-            activeOpacity={0.7}
-          >
-            <Text style={[
-              styles.rpeBtnText,
-              currentRpe === val && styles.rpeBtnTextActive,
-              parseFloat(val) >= 9.5 && styles.rpeBtnTextDanger,
-            ]}>
-              {val}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        {RPE_VALUES.map((val) => {
+          const rir = rpeToRir(val);
+          return (
+            <TouchableOpacity
+              key={val}
+              style={[
+                styles.rpeBtn,
+                currentRpe === val && styles.rpeBtnActive,
+                parseFloat(val) >= 9.5 && styles.rpeBtnDanger,
+              ]}
+              onPress={() => { onSelect(val); onClose(); }}
+              activeOpacity={0.7}
+            >
+              <Text style={[
+                styles.rpeBtnText,
+                currentRpe === val && styles.rpeBtnTextActive,
+                parseFloat(val) >= 9.5 && styles.rpeBtnTextDanger,
+              ]}>
+                {useRIR ? rir : val}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
       <View style={styles.rpeScale}>
-        <Text style={styles.rpeScaleTip}>6 = bardzo lekko</Text>
-        <Text style={styles.rpeScaleTip}>10 = do upadku</Text>
+        {useRIR ? (
+          <>
+            <Text style={styles.rpeScaleTip}>4 = bardzo lekko</Text>
+            <Text style={styles.rpeScaleTip}>0 = do upadku</Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.rpeScaleTip}>6 = bardzo lekko</Text>
+            <Text style={styles.rpeScaleTip}>10 = do upadku</Text>
+          </>
+        )}
       </View>
     </View>
   );
@@ -258,18 +278,27 @@ const SwipeableSetRow = ({
   onDeleteExercise, // wywołane gdy to ostatnia seria
   onCascadeUpdate,
   onDropSetPress,
-  onCycleSetType,   // callback — cykl W→N→D→F
   isBWWeighted,     // ćwiczenie z masą własną + obciążenie (np. podciąganie z pasem)
   bodyWeight,       // waga ciała z profilu (kg)
   onUpdateBodyWeight, // callback — otwiera modal do aktualizacji wagi ciała
+  repsMode = 'single',
 }) => {
-  const { prevLog, kg, reps, rpe, done, suggested, aiSuggested, isDropSet, setType } = setData;
+  const { prevLog, kg, reps, rpe, done, suggested, aiSuggested, isDropSet } = setData;
+  const isRange = repsMode === 'range';
+  const parsedReps = parseRepsString(reps);
+  const repsMin = isRange ? (parsedReps.mode === 'range' ? parsedReps.min : parsedReps.value) : reps;
+  const repsMax = isRange && parsedReps.mode === 'range' ? parsedReps.max : '';
   const [aiOpen, setAiOpen]           = useState(false);
   const [rpePickerOpen, setRpePickerOpen] = useState(false);
   const swipeRef                      = useRef(null);
   const flashAnim                     = useRef(new Animated.Value(0)).current;
   const { colors } = useTheme();
+  const { useRIR } = useWorkoutContext();
   const styles = makeStyles(colors);
+
+  const rpeDisplayLabel = rpe
+    ? (useRIR ? String(rpeToRir(rpe)) : rpe)
+    : (useRIR ? 'RIR' : 'RPE');
 
   const flashRow = () => {
     flashAnim.setValue(1);
@@ -370,23 +399,20 @@ const SwipeableSetRow = ({
     >
       <Animated.View style={[
         styles.wrapper,
-        (isDropSet || setType === 'D') && styles.wrapperDropSet,
+        isDropSet && styles.wrapperDropSet,
         { backgroundColor: flashBg },
       ]}>
 
         <View style={styles.row}>
-          <SetTypeButton
-            type={resolveSetType(setType, isDropSet)}
-            index={index}
-            onPress={onCycleSetType}
-            disabled={done}
-          />
+          <View style={styles.setNumWrapper}>
+            <Text style={[styles.setNum, done && styles.dimText]}>{index + 1}</Text>
+          </View>
 
           <View style={styles.prevGroup}>
             <Text style={styles.prevText} numberOfLines={1}>{prevLog}</Text>
           </View>
 
-          {/* RPE — tap otwiera inline picker */}
+          {/* RPE/RIR — tap otwiera inline picker */}
           <TouchableOpacity
             style={[styles.input, styles.rpeTouchable, done && styles.inputDone]}
             onPress={() => !done && setRpePickerOpen((v) => !v)}
@@ -394,7 +420,7 @@ const SwipeableSetRow = ({
             disabled={done}
           >
             <Text style={[styles.kgText, !rpe && styles.kgPlaceholder, done && { color: colors.borderMuted }]}>
-              {rpe || 'RPE'}
+              {rpeDisplayLabel}
             </Text>
           </TouchableOpacity>
 
@@ -421,7 +447,7 @@ const SwipeableSetRow = ({
                 keyboardType="numeric"
                 maxLength={6}
                 placeholder="kg"
-                placeholderTextColor={colors.borderMuted}
+                placeholderTextColor={colors.textTertiary}
                 editable={!done}
                 selectTextOnFocus
               />
@@ -431,18 +457,46 @@ const SwipeableSetRow = ({
             </View>
           )}
 
-          {/* Powtórzenia */}
-          <TextInput
-            style={[styles.input, styles.inputReps, done && styles.inputDone]}
-            value={reps}
-            onChangeText={(v) => onUpdate('reps', v)}
-            keyboardType="numeric"
-            maxLength={10}
-            placeholder="Powt."
-            placeholderTextColor={colors.borderMuted}
-            editable={!done}
-            selectTextOnFocus
-          />
+          {/* Powtórzenia / zakres od–do */}
+          {isRange ? (
+            <View style={styles.rangeCell}>
+              <TextInput
+                style={[styles.rangeInput, done && styles.inputDone]}
+                value={repsMin}
+                onChangeText={(v) => onUpdate('reps', formatRepsString(v.replace(/\D/g, ''), repsMax))}
+                keyboardType="number-pad"
+                maxLength={3}
+                placeholder="—"
+                placeholderTextColor={colors.textTertiary}
+                editable={!done}
+                selectTextOnFocus
+              />
+              <Text style={[styles.toLabel, done && { color: colors.borderMuted }]}>do</Text>
+              <TextInput
+                style={[styles.rangeInput, done && styles.inputDone]}
+                value={repsMax}
+                onChangeText={(v) => onUpdate('reps', formatRepsString(repsMin, v.replace(/\D/g, '')))}
+                keyboardType="number-pad"
+                maxLength={3}
+                placeholder="—"
+                placeholderTextColor={colors.textTertiary}
+                editable={!done}
+                selectTextOnFocus
+              />
+            </View>
+          ) : (
+            <TextInput
+              style={[styles.input, styles.inputReps, done && styles.inputDone]}
+              value={reps}
+              onChangeText={(v) => onUpdate('reps', v.replace(/\D/g, ''))}
+              keyboardType="numeric"
+              maxLength={3}
+              placeholder="—"
+              placeholderTextColor={colors.textTertiary}
+              editable={!done}
+              selectTextOnFocus
+            />
+          )}
 
           {/* Checkbox */}
           <TouchableOpacity
@@ -461,6 +515,7 @@ const SwipeableSetRow = ({
             onSelect={(val) => onUpdate('rpe', val)}
             onClose={() => setRpePickerOpen(false)}
             colors={colors}
+            useRIR={useRIR}
           />
         )}
 
@@ -496,7 +551,7 @@ const SwipeableSetRow = ({
           <SmartInsightCard
             progression={progression}
             uiKg={kg}
-            uiReps={reps}
+            uiReps={String(repsForVolume(reps) || '')}
             onCascadeUpdate={onCascadeUpdate}
           />
         )}
@@ -514,6 +569,7 @@ const makeStyles = (c) => StyleSheet.create({
   row:           { flexDirection: 'row', alignItems: 'center', gap: 4, paddingBottom: 4 },
   setNumWrapper: { width: 20, alignItems: 'center' },
   setNum:        { fontSize: 13, fontWeight: '700', color: c.textTertiary },
+  dimText:       { opacity: 0.45 },
   prevGroup:     { flex: 1, minWidth: 0 },
   prevText:      { fontSize: 11, color: c.textSecondary },
 
@@ -527,6 +583,13 @@ const makeStyles = (c) => StyleSheet.create({
   kgText:        { fontSize: 15, fontWeight: '700', color: c.textPrimary },
   kgPlaceholder: { color: c.borderMuted },
   inputReps:     { width: 52 },
+  rangeCell:     { width: 88, flexDirection: 'row', alignItems: 'center', gap: 2 },
+  rangeInput: {
+    flex: 1, minHeight: 48,
+    backgroundColor: c.background, borderWidth: 1, borderColor: c.border, borderRadius: 10,
+    fontSize: 13, fontWeight: '700', color: c.textPrimary, textAlign: 'center', paddingVertical: 4,
+  },
+  toLabel:       { fontSize: 10, fontWeight: '600', color: c.textTertiary },
   inputDone:     { color: c.borderMuted, borderColor: c.card },
   inputWrap:     { position: 'relative', width: 46 },
   arrow:         { position: 'absolute', top: -7, right: -3, backgroundColor: c.background, borderRadius: 4 },

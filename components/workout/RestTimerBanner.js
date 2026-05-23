@@ -1,28 +1,46 @@
-import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 
-const RestTimerBanner = ({ label, duration, onDismiss }) => {
-  const [sec, setSec]       = useState(duration);
-  const [totalSec]          = useState(duration);
-  const [minimized, setMin] = useState(false);
+const RestTimerBanner = ({ label, duration, onDismiss, onRemainingChange }) => {
+  const totalSec            = duration;
+  const endsAtRef           = useRef(Date.now() + duration * 1000);
   const intervalRef         = useRef(null);
+  const dismissedRef        = useRef(false);
+  const [sec, setSec]       = useState(duration);
+  const [minimized, setMin] = useState(false);
   const { colors }          = useTheme();
 
+  const syncFromClock = useCallback(() => {
+    const remaining = Math.max(0, Math.ceil((endsAtRef.current - Date.now()) / 1000));
+    setSec(remaining);
+    onRemainingChange?.(remaining);
+
+    if (remaining <= 0 && !dismissedRef.current) {
+      dismissedRef.current = true;
+      clearInterval(intervalRef.current);
+      onDismiss?.();
+    }
+    return remaining;
+  }, [onDismiss, onRemainingChange]);
+
   useEffect(() => {
-    intervalRef.current = setInterval(() => {
-      setSec((prev) => {
-        if (prev <= 1) {
-          clearInterval(intervalRef.current);
-          onDismiss?.();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    endsAtRef.current = Date.now() + duration * 1000;
+    dismissedRef.current = false;
+    setSec(duration);
+    syncFromClock();
+
+    intervalRef.current = setInterval(syncFromClock, 500);
     return () => clearInterval(intervalRef.current);
-  }, []);
+  }, [duration, syncFromClock]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') syncFromClock();
+    });
+    return () => sub.remove();
+  }, [syncFromClock]);
 
   const fmt = (s) => {
     const m  = Math.floor(s / 60);
@@ -31,8 +49,14 @@ const RestTimerBanner = ({ label, duration, onDismiss }) => {
   };
 
   const handleSkip = () => {
+    dismissedRef.current = true;
     clearInterval(intervalRef.current);
     onDismiss?.();
+  };
+
+  const addTime = (deltaSec) => {
+    endsAtRef.current += deltaSec * 1000;
+    syncFromClock();
   };
 
   const progress = totalSec > 0 ? Math.max(0, sec / totalSec) : 0;
@@ -84,7 +108,7 @@ const RestTimerBanner = ({ label, duration, onDismiss }) => {
       <View style={s.btns}>
         <TouchableOpacity
           style={[s.btn, { backgroundColor: colors.card, borderColor: colors.border }]}
-          onPress={() => setSec((p) => p + 15)}
+          onPress={() => addTime(15)}
           activeOpacity={0.7}
         >
           <Text style={[s.btnText, { color: colors.textPrimary }]}>+15s</Text>
@@ -98,7 +122,10 @@ const RestTimerBanner = ({ label, duration, onDismiss }) => {
         </TouchableOpacity>
         <TouchableOpacity
           style={[s.btn, { backgroundColor: colors.card, borderColor: colors.border }]}
-          onPress={() => setSec(totalSec)}
+          onPress={() => {
+            endsAtRef.current = Date.now() + totalSec * 1000;
+            syncFromClock();
+          }}
           activeOpacity={0.7}
         >
           <Text style={[s.btnText, { color: colors.textSecondary }]}>Resetuj</Text>
