@@ -38,36 +38,36 @@ const defData = () => ({ sets: [newSet(), newSet(), newSet()], rest: null, notes
 const REORDER_H = 68;
 
 function ReorderModal({ visible, items, onDone, onClose, colors }) {
-  const [local,      setLocal]      = useState([]);
-  const [dragIdx,    setDragIdx]    = useState(-1);
-  const [targetIdx,  setTargetIdx]  = useState(-1);
+  const [local,     setLocal]     = useState([]);
+  const [dragIdx,   setDragIdx]   = useState(-1);
+  const [targetIdx, setTargetIdx] = useState(-1);
   const dragRef    = useRef(-1);
   const targetRef  = useRef(-1);
   const localRef   = useRef([]);
   const dragAnim   = useRef(new Animated.Value(0)).current;
-  const shiftMap   = useRef({});
-  const handlers   = useRef({});
+  const shiftAnims = useRef({});
 
   useEffect(() => {
     if (!visible) return;
-    setLocal([...items]);
-    localRef.current = [...items];
-    shiftMap.current = {};
-    handlers.current = {};
-    dragRef.current  = -1;
+    const copy = [...items];
+    setLocal(copy);
+    localRef.current = copy;
+    shiftAnims.current = {};
+    dragRef.current   = -1;
     targetRef.current = -1;
+    dragAnim.setValue(0);
     setDragIdx(-1);
     setTargetIdx(-1);
-    dragAnim.setValue(0);
   }, [visible]);
 
   useEffect(() => { localRef.current = local; }, [local]);
 
-  const getShift = (id) => {
-    if (!shiftMap.current[id]) shiftMap.current[id] = new Animated.Value(0);
-    return shiftMap.current[id];
-  };
+  const getShift = useCallback((id) => {
+    if (!shiftAnims.current[id]) shiftAnims.current[id] = new Animated.Value(0);
+    return shiftAnims.current[id];
+  }, []);
 
+  // Animate other items when drag position changes
   useEffect(() => {
     localRef.current.forEach((item, idx) => {
       if (idx === dragIdx) return;
@@ -77,11 +77,15 @@ function ReorderModal({ visible, items, onDone, onClose, colors }) {
         if (from < to && idx > from && idx <= to) shift = -REORDER_H;
         if (from > to && idx >= to  && idx < from) shift = REORDER_H;
       }
-      Animated.spring(getShift(item.id), { toValue: shift, useNativeDriver: true, speed: 25, bounciness: 2 }).start();
+      Animated.spring(getShift(item.id), {
+        toValue: shift, useNativeDriver: true, speed: 30, bounciness: 0,
+      }).start();
     });
-  }, [dragIdx, targetIdx]);
+  }, [dragIdx, targetIdx, getShift]);
 
-  const buildHandler = useCallback((itemId) => {
+  // Single PanResponder per item — attached only to the drag handle
+  const panMap = useRef({});
+  const buildPan = useCallback((itemId) => {
     return PanResponder.create({
       onStartShouldSetPanResponder:        () => true,
       onStartShouldSetPanResponderCapture: () => true,
@@ -99,10 +103,10 @@ function ReorderModal({ visible, items, onDone, onClose, colors }) {
       },
       onPanResponderMove: (_, gs) => {
         dragAnim.setValue(gs.dy);
-        const start = dragRef.current;
-        if (start === -1) return;
+        const from = dragRef.current;
+        if (from === -1) return;
         const n = localRef.current.length;
-        const c = Math.max(0, Math.min(n - 1, Math.round((start * REORDER_H + gs.dy) / REORDER_H)));
+        const c = Math.max(0, Math.min(n - 1, Math.round((from * REORDER_H + gs.dy) / REORDER_H)));
         if (c !== targetRef.current) {
           targetRef.current = c;
           setTargetIdx(c);
@@ -117,6 +121,8 @@ function ReorderModal({ visible, items, onDone, onClose, colors }) {
         dragAnim.setValue(0);
         dragRef.current   = -1;
         targetRef.current = -1;
+        setDragIdx(-1);
+        setTargetIdx(-1);
         if (from !== to) {
           setLocal(prev => {
             const a = [...prev];
@@ -126,8 +132,6 @@ function ReorderModal({ visible, items, onDone, onClose, colors }) {
           });
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
-        setDragIdx(-1);
-        setTargetIdx(-1);
       },
       onPanResponderTerminate: () => {
         dragAnim.setValue(0);
@@ -139,79 +143,95 @@ function ReorderModal({ visible, items, onDone, onClose, colors }) {
     }).panHandlers;
   }, [dragAnim]);
 
-  const getHandlers = useCallback((itemId) => {
-    if (!handlers.current[itemId]) handlers.current[itemId] = buildHandler(itemId);
-    return handlers.current[itemId];
-  }, [buildHandler]);
+  const getPan = useCallback((itemId) => {
+    if (!panMap.current[itemId]) panMap.current[itemId] = buildPan(itemId);
+    return panMap.current[itemId];
+  }, [buildPan]);
 
   const s = makeReorderStyles(colors);
+
+  // Używamy transparent Modal bez pageSheet żeby uniknąć konfliktu gestów iOS
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={s.screen}>
-        <View style={s.handle} />
-        <Text style={s.title}>Zmień kolejność</Text>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={s.overlay}>
+        <View style={[s.screen, { backgroundColor: colors.background }]}>
+          <View style={[s.handle, { backgroundColor: colors.borderMuted }]} />
+          <Text style={[s.title, { color: colors.textPrimary, borderBottomColor: colors.border }]}>
+            Zmień kolejność
+          </Text>
 
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={s.list}
-          showsVerticalScrollIndicator={false}
-          scrollEnabled={dragIdx === -1}
-        >
-          {local.map((item, idx) => {
-            const isActive = dragIdx === idx;
-            return (
-              <Animated.View
-                key={item.id}
-                style={[
-                  s.item,
-                  {
-                    transform:       [{ translateY: isActive ? dragAnim : getShift(item.id) }],
-                    zIndex:          isActive ? 999 : 1,
-                    elevation:       isActive ? 8 : 0,
-                    backgroundColor: isActive ? colors.backgroundSecondary : colors.background,
-                    shadowColor:     '#000',
-                    shadowOpacity:   isActive ? 0.18 : 0,
-                    shadowRadius:    isActive ? 8 : 0,
-                  },
-                ]}
-              >
-                <TouchableOpacity
-                  style={s.deleteBtn}
-                  onPress={() => {
-                    setLocal(prev => prev.filter((_, i) => i !== idx));
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <View style={s.deleteDot}>
-                    <Ionicons name="remove" size={16} color="#fff" />
-                  </View>
-                </TouchableOpacity>
-                <Image
-                  source={{ uri: item.image ?? 'https://via.placeholder.com/40/2C2C2E/636366?text=EX' }}
-                  style={s.thumb}
-                />
-                <Text style={s.name} numberOfLines={1}>{item.name}</Text>
-                <View
-                  {...getHandlers(item.id)}
-                  style={s.dragHandle}
-                  hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
-                >
-                  <Ionicons name="reorder-three-outline" size={26} color={colors.borderMuted} />
-                </View>
-              </Animated.View>
-            );
-          })}
-        </ScrollView>
-
-        <View style={s.footer}>
-          <TouchableOpacity
-            style={[s.doneBtn, { backgroundColor: colors.accent }]}
-            onPress={() => { onDone(local); onClose(); }}
-            activeOpacity={0.85}
+          {/* Lista bez ScrollView — brak konfliktu gestów */}
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={s.list}
+            showsVerticalScrollIndicator={false}
+            scrollEnabled={dragIdx === -1}
+            keyboardShouldPersistTaps="handled"
           >
-            <Text style={[s.doneTxt, { color: colors.accentText }]}>Gotowe</Text>
-          </TouchableOpacity>
+            {local.map((item, idx) => {
+              const isActive = dragIdx === idx;
+              return (
+                <Animated.View
+                  key={item.id}
+                  style={[
+                    s.item,
+                    { borderBottomColor: colors.border },
+                    {
+                      transform:       [{ translateY: isActive ? dragAnim : getShift(item.id) }],
+                      zIndex:          isActive ? 999 : 1,
+                      elevation:       isActive ? 10 : 0,
+                      backgroundColor: isActive ? colors.backgroundSecondary : colors.background,
+                      shadowColor:     '#000',
+                      shadowOpacity:   isActive ? 0.2 : 0,
+                      shadowRadius:    isActive ? 10 : 0,
+                      shadowOffset:    { width: 0, height: isActive ? 4 : 0 },
+                    },
+                  ]}
+                >
+                  {/* Przycisk usunięcia */}
+                  <TouchableOpacity
+                    style={s.deleteBtn}
+                    onPress={() => {
+                      setLocal(prev => prev.filter((_, i) => i !== idx));
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <View style={s.deleteDot}>
+                      <Ionicons name="remove" size={16} color="#fff" />
+                    </View>
+                  </TouchableOpacity>
+
+                  <Image
+                    source={{ uri: item.image ?? 'https://via.placeholder.com/40/2C2C2E/636366?text=EX' }}
+                    style={s.thumb}
+                  />
+                  <Text style={[s.name, { color: colors.textPrimary }]} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+
+                  {/* Uchwyt — PanResponder tylko tutaj */}
+                  <View
+                    {...getPan(item.id)}
+                    style={s.dragHandle}
+                    hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                  >
+                    <Ionicons name="reorder-three-outline" size={28} color={colors.textTertiary} />
+                  </View>
+                </Animated.View>
+              );
+            })}
+          </ScrollView>
+
+          <View style={[s.footer, { borderTopColor: colors.border }]}>
+            <TouchableOpacity
+              style={[s.doneBtn, { backgroundColor: colors.accent }]}
+              onPress={() => { onDone(local); onClose(); }}
+              activeOpacity={0.85}
+            >
+              <Text style={[s.doneTxt, { color: colors.accentText }]}>Gotowe</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </Modal>
@@ -1124,21 +1144,22 @@ const makeStyles = (c) => StyleSheet.create({
 
 // ─── Style: ReorderModal ──────────────────────────────────────────────────────
 const makeReorderStyles = (c) => StyleSheet.create({
-  screen:     { flex: 1, backgroundColor: c.background },
-  handle:     { width: 36, height: 4, backgroundColor: c.borderMuted, borderRadius: 2, alignSelf: 'center', marginTop: 12 },
-  title:      { fontSize: 18, fontWeight: '700', color: c.textPrimary, textAlign: 'center', paddingVertical: 14, borderBottomWidth: 0.5, borderBottomColor: c.border },
-  list:       { paddingHorizontal: 16, paddingTop: 4 },
+  overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  screen:     { borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '90%', minHeight: 200 },
+  handle:     { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 12 },
+  title:      { fontSize: 18, fontWeight: '700', textAlign: 'center', paddingVertical: 14, borderBottomWidth: 0.5 },
+  list:       { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8 },
   item: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     height: REORDER_H,
-    borderBottomWidth: 0.5, borderBottomColor: c.border,
+    borderBottomWidth: 0.5,
   },
   deleteBtn:  { padding: 4 },
   deleteDot:  { width: 26, height: 26, borderRadius: 13, backgroundColor: '#FF453A', justifyContent: 'center', alignItems: 'center' },
   thumb:      { width: 40, height: 40, borderRadius: 10, backgroundColor: '#2C2C2E' },
-  name:       { flex: 1, fontSize: 15, fontWeight: '500', color: c.textPrimary },
-  dragHandle: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  footer:     { padding: 16, paddingBottom: Platform.OS === 'ios' ? 36 : 20 },
+  name:       { flex: 1, fontSize: 15, fontWeight: '500' },
+  dragHandle: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
+  footer:     { padding: 16, paddingBottom: Platform.OS === 'ios' ? 36 : 20, borderTopWidth: 0.5 },
   doneBtn:    { borderRadius: 16, paddingVertical: 16, alignItems: 'center' },
   doneTxt:    { fontSize: 16, fontWeight: '700' },
 });
