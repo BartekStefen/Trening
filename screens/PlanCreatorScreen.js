@@ -84,9 +84,9 @@ function ReorderModal({ visible, items, onDone, onClose, colors }) {
   const buildHandler = useCallback((itemId) => {
     return PanResponder.create({
       onStartShouldSetPanResponder:        () => true,
-      onStartShouldSetPanResponderCapture: () => false,
+      onStartShouldSetPanResponderCapture: () => true,
       onMoveShouldSetPanResponder:         () => true,
-      onMoveShouldSetPanResponderCapture:  () => false,
+      onMoveShouldSetPanResponderCapture:  () => true,
       onPanResponderGrant: () => {
         const idx = localRef.current.findIndex(i => i.id === itemId);
         if (idx === -1) return;
@@ -386,7 +386,7 @@ function SupersetPickerModal({ visible, fromIdx, items, supersets, onConnect, on
 
 // ─── ExerciseActionsSheet ─────────────────────────────────────────────────────
 function ExerciseActionsSheet({ visible, exercise, isInSuperset, supersetColor: ssCol,
-  onClose, onDetails, onDuplicate, onSuperset, onDelete, colors }) {
+  onClose, onDetails, onDuplicate, onSuperset, onDelete, onReorder, colors }) {
   if (!exercise) return null;
   const s = makeActionsStyles(colors);
   return (
@@ -395,6 +395,17 @@ function ExerciseActionsSheet({ visible, exercise, isInSuperset, supersetColor: 
         <View style={s.sheet}>
           <View style={s.handle} />
           <Text style={s.title} numberOfLines={1}>{exercise.name}</Text>
+
+          <TouchableOpacity style={s.row} onPress={onReorder} activeOpacity={0.7}>
+            <View style={[s.iconBox, { backgroundColor: 'rgba(167,139,250,0.12)' }]}>
+              <Ionicons name="reorder-three-outline" size={20} color="#A78BFA" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.rowLabel}>Zmień kolejność</Text>
+              <Text style={s.rowSub}>Przeciągnij ćwiczenia w planie</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.borderMuted} />
+          </TouchableOpacity>
 
           <TouchableOpacity style={s.row} onPress={onDetails} activeOpacity={0.7}>
             <View style={[s.iconBox, { backgroundColor: 'rgba(55,138,221,0.12)' }]}>
@@ -685,17 +696,6 @@ export default function PlanCreatorScreen({ navigation, route }) {
               </View>
             </>
           )}
-          <View style={{ flex: 1 }} />
-          {items.length > 1 && (
-            <TouchableOpacity
-              style={[s.reorderBtn, { borderColor: colors.border }]}
-              onPress={() => setReorderVisible(true)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="reorder-three-outline" size={15} color={colors.textSecondary} />
-              <Text style={[s.reorderTxt, { color: colors.textSecondary }]}>Kolejność</Text>
-            </TouchableOpacity>
-          )}
         </View>
 
         {/* ── Lista ────────────────────────────────────────────────────── */}
@@ -857,7 +857,7 @@ export default function PlanCreatorScreen({ navigation, route }) {
                             maxLength={3}
                             selectTextOnFocus
                           />
-                          <Text style={[s.toLabel, { color: colors.textTertiary }]}>to</Text>
+                          <Text style={[s.toLabel, { color: colors.textTertiary }]}>do</Text>
                           <TextInput
                             style={[s.rangeInput, { color: colors.textPrimary, borderColor: colors.border }]}
                             value={set.repsB}
@@ -966,6 +966,7 @@ export default function PlanCreatorScreen({ navigation, route }) {
         supersetColor={actionsIdx !== -1 ? ssColor(supersets[items[actionsIdx]?.id]) : null}
         colors={colors}
         onClose={() => setActionsIdx(-1)}
+        onReorder={() => { setActionsIdx(-1); setReorderVisible(true); }}
         onDetails={() => {
           const ex = items[actionsIdx]; const idx = actionsIdx;
           setActionsIdx(-1); setDetailEx(ex); setDetailIdx(idx);
@@ -1047,9 +1048,6 @@ const makeStyles = (c) => StyleSheet.create({
   statChip:   { flexDirection: 'row', alignItems: 'center', gap: 4 },
   statTxt:    { fontSize: 12, color: c.textSecondary, fontWeight: '500' },
   statDot:    { width: 3, height: 3, borderRadius: 1.5, backgroundColor: c.borderMuted },
-  reorderBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5 },
-  reorderTxt: { fontSize: 12, fontWeight: '600' },
-
   listContent: { paddingHorizontal: 16 },
 
   card:        { borderRadius: 16, overflow: 'hidden', paddingBottom: 4 },
