@@ -9,18 +9,13 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { useWorkoutContext } from '../context/WorkoutContext';
-import { getAudioModeShort, AUDIO_MODES } from '../utils/audioAssistantConstants';
 import { useTheme } from '../context/ThemeContext';
-import { useDietContext } from '../context/DietContext';
 import VolumeChart from '../components/profile/VolumeChart';
 import AnalyticsDashboard from '../components/profile/AnalyticsDashboard';
+import AchievementBadges from '../components/profile/AchievementBadges';
+import SettingsModal from '../components/profile/SettingsModal';
 import { SectionHeader } from '../components/profile/CardHeader';
 import { PROFILE_INFO } from '../constants/profileInfoTexts';
-
-const INITIAL_HABITS = [
-  { id: '1', name: 'Kreatyna 5g', icon: 'fitness-outline',  done: true  },
-  { id: '2', name: 'Sen 8h',      icon: 'moon-outline',     done: false },
-];
 
 const fmtDur = (s) => {
   if (!s) return '—';
@@ -182,22 +177,16 @@ const pickerStyles = StyleSheet.create({
 
 // ─── Główny ekran profilu ─────────────────────────────────────────────────────
 export default function ProfileScreen({ navigation }) {
-  const [habits, setHabits]           = useState(INITIAL_HABITS);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
-  const { workoutHistory, useRIR, toggleRIR, rampEnabled, toggleRamp, audioAssistantMode, cycleAudioAssistant } = useWorkoutContext();
-  const { weatherEnabled, toggleWeatherModifier } = useDietContext();
-  const { colors, themes, themeId }   = useTheme();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const { workoutHistory, dailyHabits, toggleDailyHabit } = useWorkoutContext();
+  const { colors } = useTheme();
 
   const styles = makeStyles(colors);
-
-  const toggleHabit = (id) =>
-    setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, done: !h.done } : h)));
 
   const totalTonnage  = workoutHistory.reduce((a, w) => a + (w.tonnage ?? 0), 0);
   const totalSessions = workoutHistory.length;
   const lastWorkout   = workoutHistory[0];
-
-  const activeThemeLabel = themes[themeId]?.label ?? 'Ciemny';
 
   return (
     <>
@@ -208,6 +197,14 @@ export default function ProfileScreen({ navigation }) {
       >
         <View style={styles.header}>
           <Text style={styles.title}>Profil</Text>
+          <TouchableOpacity
+            style={styles.gearBtn}
+            onPress={() => setSettingsOpen(true)}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="settings-outline" size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
         </View>
 
         {/* Statystyki zbiorcze */}
@@ -230,6 +227,8 @@ export default function ProfileScreen({ navigation }) {
             <Text style={styles.statLbl}>Ostatni</Text>
           </View>
         </View>
+
+        <AchievementBadges />
 
         {/* Historia treningów */}
         <TouchableOpacity
@@ -262,15 +261,15 @@ export default function ProfileScreen({ navigation }) {
         )}
 
         {/* Moduł Profil i Analityka */}
-        <AnalyticsDashboard habits={habits} />
+        <AnalyticsDashboard />
 
         {/* Nawyki */}
         <SectionHeader title="Codzienne nawyki" infoBody={PROFILE_INFO.habits} />
-        {habits.map((habit) => (
+        {dailyHabits.map((habit) => (
           <TouchableOpacity
             key={habit.id}
             style={styles.habitCard}
-            onPress={() => toggleHabit(habit.id)}
+            onPress={() => toggleDailyHabit(habit.id)}
             activeOpacity={0.7}
           >
             <View style={[styles.checkbox, habit.done && styles.checkboxDone]}>
@@ -288,146 +287,13 @@ export default function ProfileScreen({ navigation }) {
           </TouchableOpacity>
         ))}
 
-        {/* Ustawienia */}
-        <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Ustawienia</Text>
-
-        {/* Motyw aplikacji — aktywny selektor */}
-        <TouchableOpacity
-          style={styles.settingCard}
-          activeOpacity={0.7}
-          onPress={() => setThemePickerOpen(true)}
-        >
-          <View style={styles.settingLeft}>
-            <View style={[styles.settingIconWrapper, { backgroundColor: colors.accentSoft }]}>
-              <Ionicons name="contrast-outline" size={20} color={colors.accent} />
-            </View>
-            <Text style={styles.settingName}>Motyw aplikacji</Text>
-          </View>
-          <View style={styles.settingRight}>
-            <Text style={[styles.settingValue, { color: colors.accent }]}>{activeThemeLabel}</Text>
-            <Ionicons name="chevron-forward" size={18} color={colors.borderMuted} />
-          </View>
-        </TouchableOpacity>
-
-        {/* Skala intensywności RPE / RIR */}
-        <TouchableOpacity
-          style={styles.settingCard}
-          activeOpacity={0.7}
-          onPress={toggleRIR}
-        >
-          <View style={styles.settingLeft}>
-            <View style={[styles.settingIconWrapper, { backgroundColor: useRIR ? 'rgba(0,230,118,0.15)' : colors.border }]}>
-              <Ionicons name="flame-outline" size={20} color={useRIR ? '#00E676' : colors.textSecondary} />
-            </View>
-            <View>
-              <Text style={styles.settingName}>Skala intensywności</Text>
-              <Text style={[styles.settingDesc, { color: colors.textSecondary }]}>
-                {useRIR ? 'RIR — powtórzenia w zapasie' : 'RPE — skala wysiłku 6–10'}
-              </Text>
-            </View>
-          </View>
-          <View style={[styles.rirToggle, { backgroundColor: useRIR ? '#00E676' : colors.border }]}>
-            <Text style={[styles.rirToggleText, { color: useRIR ? '#000' : colors.textSecondary }]}>
-              {useRIR ? 'RIR' : 'RPE'}
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Autoregulacja rozgrzewki RAMP */}
-        <TouchableOpacity
-          style={styles.settingCard}
-          activeOpacity={0.7}
-          onPress={toggleRamp}
-        >
-          <View style={styles.settingLeft}>
-            <View style={[styles.settingIconWrapper, { backgroundColor: rampEnabled ? 'rgba(239,159,39,0.18)' : colors.border }]}>
-              <Ionicons name="flame" size={20} color={rampEnabled ? '#EF9F27' : colors.textSecondary} />
-            </View>
-            <View>
-              <Text style={styles.settingName}>Rozgrzewka RAMP</Text>
-              <Text style={[styles.settingDesc, { color: colors.textSecondary }]}>
-                {rampEnabled ? 'Menu ⋯ → podgląd i dodanie serii rozgrzewkowych' : 'Wyłączone'}
-              </Text>
-            </View>
-          </View>
-          <View style={[styles.rirToggle, { backgroundColor: rampEnabled ? '#EF9F27' : colors.border }]}>
-            <Text style={[styles.rirToggleText, { color: rampEnabled ? '#000' : colors.textSecondary }]}>
-              {rampEnabled ? 'ON' : 'OFF'}
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Audio-asystent w słuchawkach */}
-        <TouchableOpacity
-          style={styles.settingCard}
-          activeOpacity={0.7}
-          onPress={cycleAudioAssistant}
-        >
-          <View style={styles.settingLeft}>
-            <View style={[styles.settingIconWrapper, { backgroundColor: audioAssistantMode !== AUDIO_MODES.OFF ? 'rgba(55,138,221,0.18)' : colors.border }]}>
-              <Ionicons name="headset-outline" size={20} color={audioAssistantMode !== AUDIO_MODES.OFF ? '#378ADD' : colors.textSecondary} />
-            </View>
-            <View>
-              <Text style={styles.settingName}>Audio-asystent</Text>
-              <Text style={[styles.settingDesc, { color: colors.textSecondary }]}>
-                {audioAssistantMode === AUDIO_MODES.VOICE && 'Tykanie 5→2 s, fanfara + „Koniec przerwy. Kolejna seria.”'}
-                {audioAssistantMode === AUDIO_MODES.TICK && 'Tykanie 5→2 s, potem głośna fanfara (3× tyk)'}
-                {audioAssistantMode === AUDIO_MODES.OFF && 'Wyłączony — kliknij, aby zmienić tryb'}
-              </Text>
-            </View>
-          </View>
-          <View style={[styles.rirToggle, {
-            backgroundColor: audioAssistantMode === AUDIO_MODES.VOICE ? '#378ADD'
-              : audioAssistantMode === AUDIO_MODES.TICK ? '#EF9F27'
-              : colors.border,
-            minWidth: 52,
-          }]}>
-            <Text style={[styles.rirToggleText, {
-              color: audioAssistantMode !== AUDIO_MODES.OFF ? '#FFF' : colors.textSecondary,
-            }]}>
-              {getAudioModeShort(audioAssistantMode)}
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Modyfikator pogodowy nawodnienia */}
-        <TouchableOpacity
-          style={styles.settingCard}
-          activeOpacity={0.7}
-          onPress={toggleWeatherModifier}
-        >
-          <View style={styles.settingLeft}>
-            <View style={[styles.settingIconWrapper, { backgroundColor: weatherEnabled ? 'rgba(0,230,118,0.15)' : colors.border }]}>
-              <Ionicons name="sunny-outline" size={20} color={weatherEnabled ? '#00E676' : colors.textSecondary} />
-            </View>
-            <View>
-              <Text style={styles.settingName}>Modyfikator pogodowy</Text>
-              <Text style={[styles.settingDesc, { color: colors.textSecondary }]}>
-                {weatherEnabled ? 'Inteligentny cel wody wg temperatury i wilgotności' : 'Wyłączony'}
-              </Text>
-            </View>
-          </View>
-          <View style={[styles.rirToggle, { backgroundColor: weatherEnabled ? '#00E676' : colors.border }]}>
-            <Text style={[styles.rirToggleText, { color: weatherEnabled ? '#000' : colors.textSecondary }]}>
-              {weatherEnabled ? 'ON' : 'OFF'}
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.settingCard} activeOpacity={0.7}>
-          <View style={styles.settingLeft}>
-            <View style={styles.settingIconWrapper}>
-              <Ionicons name="notifications-outline" size={20} color={colors.textSecondary} />
-            </View>
-            <Text style={styles.settingName}>Powiadomienia</Text>
-          </View>
-          <View style={styles.settingRight}>
-            <Text style={styles.settingValue}>Włączone</Text>
-            <Ionicons name="chevron-forward" size={18} color={colors.borderMuted} />
-          </View>
-        </TouchableOpacity>
       </ScrollView>
 
+      <SettingsModal
+        visible={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onOpenTheme={() => setThemePickerOpen(true)}
+      />
       <ThemePickerModal
         visible={themePickerOpen}
         onClose={() => setThemePickerOpen(false)}
@@ -439,8 +305,20 @@ export default function ProfileScreen({ navigation }) {
 const makeStyles = (c) => StyleSheet.create({
   screen:           { flex: 1, backgroundColor: c.background },
   contentContainer: { paddingBottom: 40 },
-  header:           { paddingTop: 60, paddingHorizontal: 20, paddingBottom: 16 },
-  title:            { fontSize: 32, fontWeight: '700', color: c.textPrimary, letterSpacing: 0.3 },
+  header: {
+    paddingTop: 60,
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  title: { fontSize: 32, fontWeight: '700', color: c.textPrimary, letterSpacing: 0.3 },
+  gearBtn: {
+    width: 44, height: 44, borderRadius: 14,
+    backgroundColor: c.card, borderWidth: 0.5, borderColor: c.border,
+    justifyContent: 'center', alignItems: 'center',
+  },
 
   statsRow: { flexDirection: 'row', paddingHorizontal: 16, gap: 10, marginBottom: 16 },
   statCard: { flex: 1, backgroundColor: c.card, borderRadius: 16, padding: 14, alignItems: 'center', borderWidth: 0.5, borderColor: c.border },
@@ -471,14 +349,4 @@ const makeStyles = (c) => StyleSheet.create({
   habitName:       { fontSize: 16, fontWeight: '500', color: c.textPrimary },
   habitNameDone:   { color: c.textSecondary },
   habitSub:        { fontSize: 12, color: c.textSecondary, marginTop: 3 },
-
-  settingCard:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: c.card, marginHorizontal: 16, marginBottom: 10, borderRadius: 18, padding: 16, borderWidth: 0.5, borderColor: c.border },
-  settingLeft:        { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 },
-  settingIconWrapper: { width: 36, height: 36, borderRadius: 10, backgroundColor: c.border, justifyContent: 'center', alignItems: 'center' },
-  settingName:        { fontSize: 16, color: c.textPrimary },
-  settingDesc:        { fontSize: 11, marginTop: 2 },
-  settingRight:       { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  settingValue:       { fontSize: 14, color: c.textSecondary },
-  rirToggle:          { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6, minWidth: 46, alignItems: 'center' },
-  rirToggleText:      { fontSize: 13, fontWeight: '700' },
 });

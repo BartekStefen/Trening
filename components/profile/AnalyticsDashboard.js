@@ -15,7 +15,7 @@ import SocialShareCard from './SocialShareCard';
 import CardHeader from './CardHeader';
 import { PROFILE_INFO } from '../../constants/profileInfoTexts';
 
-export default function AnalyticsDashboard({ habits = [] }) {
+export default function AnalyticsDashboard() {
   const { workoutHistory } = useWorkoutContext();
   const { colors } = useTheme();
   const [shareOpen, setShareOpen] = useState(false);
@@ -41,7 +41,7 @@ export default function AnalyticsDashboard({ habits = [] }) {
         </TouchableOpacity>
       </View>
 
-      <ReadinessScore habits={habits} />
+      <ReadinessScore />
       <LevelSystem />
       <AsymmetryRadar />
       <FatigueForecast />

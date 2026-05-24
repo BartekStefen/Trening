@@ -21,23 +21,18 @@ Wykres pokazuje ostatnie 12 sesji i rozkład na partie, żebyś widział trendy,
   },
 
   readiness: {
-    simple: `Ocena od 1 do 10: na ile sensownie iść dziś na siłownię.
+    simple: `Ocena 1–10 przed treningiem: wellness + obciążenie (ACWR/sRPE) + regeneracja.
 
 Po co to?
-Żeby nie dobijać się, gdy jesteś zmęczony po wczorajszym ciężkim treningu albo śpisz mało — albo odwrotnie: wiedzieć, że możesz dać z siebie więcej.
+W sporcie wyczynowym monitoruje się sen, zmęczenie, ból i stres (kwestionariusz Hooper) oraz obciążenie treningowe (sRPE × czas). Aplikacja łączy te sygnały w jeden wynik gotowości.`,
+    detail: `Ready-to-Lift to model decyzyjny aplikacji — nie diagnoza medyczna.
 
-Im wyżej, tym lepiej się regenerujesz. Odhacz sen i kreatynę w nawykach — aplikacja to uwzględni.`,
-    detail: `Ready-to-Lift to heurystyka gotowości, nie diagnoza medyczna. Bazuje na:
+Składniki (wagi):
+• 45% — wellness dzienny (sen, zmęczenie, DOMS, stres) — skala 1–5, wzorowana na monitoringu Hooper / RESTQ u sportowców.
+• 35% — obciążenie treningowe: ACWR liczone z session-RPE (Foster: RPE × czas w min) lub proxy z historii, gdy brak RPE. Strefa docelowa ACWR ~0,8–1,3 (Gabbett 2016); >1,5 = podwyższone ryzyko kumulacji.
+• 20% — regeneracja per split z heatmapy: zaliczone serie × RPE na partiach góry/dół z ostatnich ~7 dni. Pusta sesja „Lower” bez pracy na nogach nie obniża gotowości.
 
-• ACWR (obciążenie ostre ÷ chroniczne) — w badaniach sportowych strefa ~0,8–1,3 wiąże się z niższym ryzykiem kontuzji; skok powyżej ~1,5 bywa sygnałem alarmowym (Gabbett, 2016).
-
-• Czas od ostatniej sesji — regeneracja mięśniowa po ciężkim treningu siłowym trwa zwykle 48–72 h na dany region.
-
-• RPE ostatniej sesji — skala Borga (6–10) odzwierciedla submaksymalny wysiłek; RPE ≥9,5 sugeruje dużą zmęczalność.
-
-• Sen i kreatyna (nawyki) — AASM zaleca 7–9 h snu dla dorosłych; ISSN potwierdza skuteczność 3–5 g monohydratu kreatyny dziennie u zdrowych osób trenujących siłowo.
-
-Wynik 1–10 pomaga zdecydować, czy dziś iść na pełnię, czy lekko — nie zastępuje konsultacji z lekarzem przy bólu lub chorobie.`,
+Wynik główny to średnia Upper + Lower. Przy starcie planu oceniany jest split z realnego obciążenia mięśni.`,
   },
 
   levels: {
@@ -63,15 +58,15 @@ Orientacyjny stosunek Push:Pull blisko 1:1 u wielu programów prewencyjnych uzna
   },
 
   fatigue: {
-    simple: `Szacuje, jak „świeży” będziesz za tydzień lub dwa, jeśli będziesz trenował tak jak teraz.
+    simple: `Szacuje indeks regeneracji za tydzień lub dwa — na podstawie trendu obciążenia sRPE i ACWR.
 
 Po co to?
-Gdy za szybko dokładasz ciężaru i objętości, ciało nie nadąża — siła spada, ryzyko kontuzji rośnie. Spadający wykres to sygnał: zrób tydzień lżej albo odpocznij.`,
-    detail: `Prognoza opiera się na tempie wzrostu tygodniowego tonażu — uproszczony model zmęczenia kumulacyjnego, inspirowany koncepcją ACWR i przetrenowania niefatigue (Meeusen et al., 2013).
+Gdy obciążenie rośnie za szybko, organizm nie nadąża z adaptacją. Spadający wykres to sygnał: deload, więcej snu lub mniejsza objętość.`,
+    detail: `Prognoza opiera się na tygodniowym obciążeniu session-RPE (Foster) i współczynniku ACWR (Gabbett 2016), z projekcją trendu na +1 i +2 tygodnie.
 
-Gdy objętość rośnie >10–15% tydzień do tygodnia przez kilka tygodni, organizm może nie nadążać z superkompensacją — spadek „gotowości siłowej” na wykresie to sygnał do deloadu, większego snu lub redukcji objętości, a nie wyrok medyczny.
+Indeks regeneracji (%) maleje przy rosnącym ACWR — zgodnie z modelem kumulacji zmęczenia (Meeusen et al., 2013). To narzędzie planistyczne, nie prognoza siły 1RM.
 
-Jeśli odczuwasz chroniczne zmęczenie, bezsenność lub spadek libido — skonsultuj się z lekarzem.`,
+Przy chronicznym zmęczeniu, bezsenności lub spadku libido — konsultacja lekarska.`,
   },
 
   goal: {
@@ -100,16 +95,25 @@ Jednym rzutem oka widać, czy np. plecy są zaniedbane w porównaniu z klatą. P
 Pomaga zobaczyć, czy np. plecy są realnie trenowane tak często, jak klatka.`,
   },
 
+  badges: {
+    simple: `Na profilu widzisz 3 podglądy tarcz. Stuknij sekcję, aby otworzyć pełny katalog z rangami (miedź → legenda), wyszukiwarką i filtrami.
+
+Po odblokowaniu nowej tarczy na górze ekranu pojawi się powiadomienie „Odblokowano osiągnięcie!”.`,
+    detail: `Katalog grupuje odznaki według rang: Miedź, Brąz, Srebro, Złoto, Platyna, Elita, Legenda.
+
+Dane z historii treningów, rekordów 1RM, planów, onboardingu i nawyków. XP ≈ 100 kg tonażu = 1 punkt. Zapis trwały w AsyncStorage.`,
+  },
+
   habits: {
-    simple: `Codzienna lista: np. kreatyna i sen. Stuknij, żeby odhaczyć.
+    simple: `Codzienna lista suplementacji i nawyków (np. kreatyna, sen). Stuknij, żeby odhaczyć.
 
 Po co to?
-Regularny sen i suplementacja wspierają trening. Odhaczone nawyki lekko podbijają ocenę gotowości w aplikacji — przypominają, że regeneracja też się liczy.`,
+Śledzenie regularności snu i suplementacji wspiera długoterminową regenerację — osobno od kwestionariusza wellness w gotowości treningowej.`,
     detail: `Sen: American Academy of Sleep Medicine zaleca ≥7 h dla dorosłych; chroniczny deficyt snu obniża wydolność, regenerację hormonalną i zwiększa ryzyko urazów.
 
-Kreatyna: stanowisko ISSN (2017) — monohydrat 3–5 g/d jest bezpieczny i skuteczny u zdrowych osób; wspiera moc i objętość treningową. Nie zastępuje białka ani snu.
+Kreatyna: stanowisko ISSN (2017) — monohydrat 3–5 g/d jest bezpieczny i skuteczny u zdrowych osób; wspiera moc i objętość treningową długoterminowo. Nie zastępuje białka ani snu.
 
-Odhaczenie nawyków lekko podbija ocenę gotowości treningowej w aplikacji.`,
+Nawyki nie wpływają bezpośrednio na wynik gotowości — ocena opiera się na kwestionariuszu wellness (sen, zmęczenie, DOMS, stres).`,
   },
 };
 

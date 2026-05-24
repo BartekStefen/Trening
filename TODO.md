@@ -4,7 +4,7 @@
 
 ### UI/UX
 - [x] **Konfigurowalny Dashboard ("Skórki")**: 5 motywów: Dark Mode, Retro Trójbój, Clean Fitness, Beast Mode, Jasny. ThemeContext + AsyncStorage, selektor kafelkowy w Profilu, StatusBar dynamiczny. Wszystkie ekrany i modale pokryte tokenami.
-- [ ] **System Osiągnięć (Badges)**: Odblokowywanie graficznych tarcz za kamienie milowe widocznych w profilu.
+- [x] **System Osiągnięć (Badges)**: Odblokowywanie graficznych tarcz za kamienie milowe widocznych w profilu.
 - [ ] **Wizualne "Streaks" (Pierścienie Siły)**: Pierścienie zamykające się za objętość treningową, dopicie wody i makro białka.
 - [ ] **Płynny Termometr Kaloryczny**: Efekt pulsowania i płynnej zmiany kolorów (60 FPS).
 - [ ] **Widżety na Ekran Główny (iOS/Android)**: Systemowy widżet prezentujący dzisiejsze makro, stan nawodnienia oraz postęp dnia.
@@ -30,9 +30,9 @@
 - [x] **Pogodowy Modyfikator Nawodnienia**: Skalowany cel wody wg temperatury (od 12°C) i wilgotności — np. 20°C ≈ +500 ml, 25°C ≈ +750 ml. Open-Meteo + DietContext.
 - [x] **Autoregulacja Rozgrzewki (RAMP)**: Inteligentny protokół dla każdego ćwiczenia (wielostaw/izolacja/kalistenika/guma) — podgląd w menu ⋯ + ręczne dodanie serii.
 - [x] **Audio-Asystent w słuchawkach**: 3 tryby (OFF / Głos+tyk / Tylko tyk). Odliczanie 5→2 s; na końcu fanfara (3× tyk) + opcjonalnie głos.
-- [ ] **Tryb "Przetrwania" (Exam/Stress Mode)**: Agresywne ucięcie objętości zaplanowanego treningu o 40% w dniach o wysokim poziomie zmęczenia.
-- [ ] **Auto-Deload (Wykrywacz Płaskowyżu)**: Algorytm monitorujący progresję, wymuszający okres roztrenowania (-15% obciążenia) przy braku postępów.
-- [ ] **Moduł w Narzędziach - Kreator Prób Maksymalnych (1RM Wizard):** Implementacja samodzielnego kreatora w zakładce Narzędzia. System ma umożliwiać wybór ćwiczenia z bazy, pobranie i wyraźne wyświetlenie w interfejsie aktualnego rekordu (1RM) użytkownika, zdefiniowanie nowego celu i automatyczne wygenerowanie dedykowanego protokołu podejść (rozgrzewka + próba główna) wraz z bezpośrednią aktualizacją rekordu w profilu po zatwierdzeniu sukcesu.
+- [x] **Tryb "Przetrwania" (Exam/Stress Mode)**: Agresywne ucięcie objętości zaplanowanego treningu o 40% w dniach o wysokim poziomie zmęczenia.
+- [x] **Auto-Deload (Wykrywacz Płaskowyżu)**: Algorytm monitorujący progresję, wymuszający okres roztrenowania (-15% obciążenia) przy braku postępów.
+- [x] **Moduł w Narzędziach - Kreator Prób Maksymalnych (1RM Wizard):** Implementacja samodzielnego kreatora w zakładce Narzędzia. System ma umożliwiać wybór ćwiczenia z bazy, pobranie i wyraźne wyświetlenie w interfejsie aktualnego rekordu (1RM) użytkownika, zdefiniowanie nowego celu i automatyczne wygenerowanie dedykowanego protokołu podejść (rozgrzewka + próba główna) wraz z bezpośrednią aktualizacją rekordu w profilu po zatwierdzeniu sukcesu.
 ### Dieta i Nawodnienie
 - [ ] **Kreator Przepisów**: Możliwość tworzenia, wyliczania makro i trwałego zapisywania własnych, unikalnych posiłków.
 - [ ] **Szybkie Kopiowanie**: Przenoszenie całych posiłków lub pełnych dni z przeszłości do bieżącego widoku jednym kliknięciem.
@@ -72,6 +72,7 @@
 - [x] WorkoutContext (stan globalny), InteractionManager (eliminacja lagów).
 - [x] PRCelebration (konfetti + haptyka) — podpięte do ActiveWorkoutScreen, wykrywa PR przy zaliczeniu serii.
 - [x] **ThemeContext + system skórek** (`theme/themes.js`, `context/ThemeContext.js`, AsyncStorage). Pokrycie: TrainingScreen, DietScreen, ToolsScreen, ProfileScreen, ActiveWorkoutScreen, WorkoutHistoryScreen, ExercisesLibraryScreen, WorkoutSummaryModal. Dynamiczny tab bar i StatusBar.
+- [x] **System Osiągnięć (Badges)**: 37 tarcz w 7 rangach, 3 podglądy w Profilu, katalog z wyszukiwarką i filtrami, baner odblokowania na ekranie głównym, zapis AsyncStorage (`AchievementsContext`).
 
 ### Moduł Treningowy
 - [x] **Tryb Krajobrazowy (Rack View)**: Overlay fullscreen z ogromnym timerem, ciężarem i seriami — aktywuje się automatycznie przy obróceniu ekranu.
@@ -89,6 +90,8 @@
 - [x] **1RM Widget + Decay Curve**: Epley chip z zankiem -5%/4 tyg., pulsująca animacja ostrzeżenia.
 - [x] **Super-Seria Glow**: pulsujący border + konektor, toggle przez ⋯ menu, 5 kolorów grup.
 - [x] **Machine Settings Memory**: MachineSettingsModal (fotel, PIN, oparcie, notatki) — AsyncStorage.
+- [x] **Tryb Przetrwania + Auto-Deload**: `trainingIntelligence.js` — gotowość ≤4 → alert −40% objętości; płaskowyż → −15% obciążenia. Toggle w Profilu, banner w ActiveWorkout.
+- [x] **Kreator prób 1RM (Wizard)**: Narzędzia → wybór ćwiczenia, aktualny rekord, protokół rozgrzewki + próby, zapis do profilu.
 
 ### Narzędzia i Dieta
 - [x] Kalkulator 1RM (5 formuł + tabela %), TDEE (Mifflin-St Jeor) i Makro (5 presetów).

@@ -3,11 +3,14 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { WorkoutProvider }        from './context/WorkoutContext';
 import { ThemeProvider }          from './context/ThemeContext';
 import { ProfileGoalsProvider }   from './context/ProfileGoalsContext';
 import { DietProvider }           from './context/DietContext';
+import { AchievementsProvider }   from './context/AchievementsContext';
+import AchievementUnlockBanner    from './components/shared/AchievementUnlockBanner';
 import { useTheme }               from './context/ThemeContext';
 import OnboardingScreen           from './screens/OnboardingScreen';
 import TrainingScreen             from './screens/TrainingScreen';
@@ -90,15 +93,20 @@ function AppNavigator() {
 
 export default function App() {
   return (
-    <WorkoutProvider>
-      <ThemeProvider>
-        <ProfileGoalsProvider>
-          <DietProvider>
-            <AppNavigator />
-            <OnboardingScreen />
-          </DietProvider>
-        </ProfileGoalsProvider>
-      </ThemeProvider>
-    </WorkoutProvider>
+    <SafeAreaProvider>
+      <WorkoutProvider>
+        <ThemeProvider>
+          <ProfileGoalsProvider>
+            <DietProvider>
+              <AchievementsProvider>
+                <AppNavigator />
+                <OnboardingScreen />
+                <AchievementUnlockBanner />
+              </AchievementsProvider>
+            </DietProvider>
+          </ProfileGoalsProvider>
+        </ThemeProvider>
+      </WorkoutProvider>
+    </SafeAreaProvider>
   );
 }
