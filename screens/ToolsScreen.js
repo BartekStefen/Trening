@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import OneRepMaxCalculator from '../components/tools/OneRepMaxCalculator';
+import OneRMWizard           from '../components/tools/OneRMWizard';
 import TDEECalculator      from '../components/tools/TDEECalculator';
 import MacroCalculator     from '../components/tools/MacroCalculator';
 
@@ -16,6 +17,15 @@ const TOOLS = [
     icon: 'barbell-outline',
     color: '#00E676',
     bg: 'rgba(0,230,118,0.1)',
+    available: true,
+  },
+  {
+    id: 'wizard',
+    title: 'Kreator prób 1RM',
+    desc: 'Protokół rozgrzewki + próby max z zapisem rekordu',
+    icon: 'trophy-outline',
+    color: '#FAC775',
+    bg: 'rgba(250,199,117,0.1)',
     available: true,
   },
   {
@@ -67,14 +77,16 @@ const TOOLS = [
 
 export default function ToolsScreen() {
   const [ormVisible,   setOrmVisible]   = useState(false);
+  const [wizardVisible, setWizardVisible] = useState(false);
   const [tdeeVisible,  setTdeeVisible]  = useState(false);
   const [macroVisible, setMacroVisible] = useState(false);
   const { colors } = useTheme();
   const s = makeStyles(colors);
 
   const handlePress = (id) => {
-    if (id === 'orm')   setOrmVisible(true);
-    if (id === 'tdee')  setTdeeVisible(true);
+    if (id === 'orm')    setOrmVisible(true);
+    if (id === 'wizard') setWizardVisible(true);
+    if (id === 'tdee')   setTdeeVisible(true);
     if (id === 'macro') setMacroVisible(true);
   };
 
@@ -114,8 +126,9 @@ export default function ToolsScreen() {
         ))}
       </ScrollView>
 
-      <OneRepMaxCalculator isVisible={ormVisible}   onClose={() => setOrmVisible(false)} />
-      <TDEECalculator      isVisible={tdeeVisible}  onClose={() => setTdeeVisible(false)} />
+      <OneRepMaxCalculator isVisible={ormVisible}     onClose={() => setOrmVisible(false)} />
+      <OneRMWizard           isVisible={wizardVisible} onClose={() => setWizardVisible(false)} />
+      <TDEECalculator      isVisible={tdeeVisible}    onClose={() => setTdeeVisible(false)} />
       <MacroCalculator     isVisible={macroVisible} onClose={() => setMacroVisible(false)} />
     </View>
   );

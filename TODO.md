@@ -5,8 +5,8 @@
 ### UI/UX
 - [x] **Konfigurowalny Dashboard ("Skórki")**: 5 motywów: Dark Mode, Retro Trójbój, Clean Fitness, Beast Mode, Jasny. ThemeContext + AsyncStorage, selektor kafelkowy w Profilu, StatusBar dynamiczny. Wszystkie ekrany i modale pokryte tokenami.
 - [x] **System Osiągnięć (Badges)**: Odblokowywanie graficznych tarcz za kamienie milowe widocznych w profilu.
-- [ ] **Wizualne "Streaks" (Pierścienie Siły)**: Pierścienie zamykające się za objętość treningową, dopicie wody i makro białka.
-- [ ] **Płynny Termometr Kaloryczny**: Efekt pulsowania i płynnej zmiany kolorów (60 FPS).
+- [x] **Wizualne "Streaks" (Pierścienie Siły)**: Pierścienie zamykające się za objętość treningową, dopicie wody i makro białka.
+- [x] **Płynny Termometr Kaloryczny**: Efekt pulsowania i płynnej zmiany kolorów (60 FPS).
 - [ ] **Widżety na Ekran Główny (iOS/Android)**: Systemowy widżet prezentujący dzisiejsze makro, stan nawodnienia oraz postęp dnia.
 - [ ] **Kreator Onboardingu (Cold Start)**: Sekwencja startowa zbierająca parametry i automatycznie wyliczająca początkowe TDEE oraz sugerowany plan.
 
@@ -73,6 +73,8 @@
 - [x] PRCelebration (konfetti + haptyka) — podpięte do ActiveWorkoutScreen, wykrywa PR przy zaliczeniu serii.
 - [x] **ThemeContext + system skórek** (`theme/themes.js`, `context/ThemeContext.js`, AsyncStorage). Pokrycie: TrainingScreen, DietScreen, ToolsScreen, ProfileScreen, ActiveWorkoutScreen, WorkoutHistoryScreen, ExercisesLibraryScreen, WorkoutSummaryModal. Dynamiczny tab bar i StatusBar.
 - [x] **System Osiągnięć (Badges)**: 37 tarcz w 7 rangach, 3 podglądy w Profilu, katalog z wyszukiwarką i filtrami, baner odblokowania na ekranie głównym, zapis AsyncStorage (`AchievementsContext`).
+- [x] **Pierścienie Siły**: 3 pierścienie SVG (`MultiArcRing`), panel w Profilu, edycja łuków, sekcja w Ustawieniach, `StrengthRingsContext` + AsyncStorage.
+- [x] **Termometr kaloryczny (Dieta)**: Kompaktowy łuk z gradientem SVG, animacja postępu, cel z `ProfileGoalsContext` — `CalorieThermometer.js`.
 
 ### Moduł Treningowy
 - [x] **Tryb Krajobrazowy (Rack View)**: Overlay fullscreen z ogromnym timerem, ciężarem i seriami — aktywuje się automatycznie przy obróceniu ekranu.

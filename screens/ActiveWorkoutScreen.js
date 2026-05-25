@@ -57,8 +57,10 @@ import { normalizeExecutionSet, repsForVolume } from '../utils/repsUtils';
 import {
   applySurvivalMode,
   applyAutoDeload,
-  detectExercisePlateaus,
+  evaluateDeloadRecommendation,
 } from '../utils/trainingIntelligence';
+import { isPersonalRecord } from '../utils/prDetection';
+import { inferDefaultRpe } from '../utils/rpeDefaults';
 
 const GYM_KEYWORDS = [
   'kg','kilo','powt','rep','rpe','rir','zapas','seri','max','maksa','pr','rekord',
@@ -862,6 +864,8 @@ const ExerciseCard = memo(function ExerciseCard({
   bodyWeight,
   onUpdateBodyWeight,
   onApplyRamp,
+  pendingRpePrompt,
+  onClearRpePrompt,
 }) {
   const isBWWeighted = exercise.exerciseType === 'bodyweight_weighted';
   const { colors } = useTheme();
@@ -1077,6 +1081,10 @@ const ExerciseCard = memo(function ExerciseCard({
           isBWWeighted={isBWWeighted}
           bodyWeight={bodyWeight}
           onUpdateBodyWeight={onUpdateBodyWeight}
+          openRpePicker={
+            pendingRpePrompt?.exIdx === exIndex && pendingRpePrompt?.setId === set.id
+          }
+          onRpePickerOpened={onClearRpePrompt}
         />
       ))}
 
@@ -1428,12 +1436,17 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   const initialSSGroups    = route?.params?.supersetGroups ?? {};
   const customPlanId       = route?.params?.customPlanId ?? null;
   const survivalMode       = route?.params?.survivalMode ?? false;
+  const survivalVolumePct  = route?.params?.survivalVolumePct;
 
-  const { initialExercises, workoutIntel } = useMemo(() => {
+  const { initialExercises, intelBanners } = useMemo(() => {
     let base;
     if (activeWorkout?.exercises?.length > 0) {
-      base = activeWorkout.exercises.map(normalizeExerciseSets);
-    } else if (customExercises?.length > 0) {
+      return {
+        initialExercises: activeWorkout.exercises.map(normalizeExerciseSets),
+        intelBanners: [],
+      };
+    }
+    if (customExercises?.length > 0) {
       base = customExercises.map(convertLibraryExercise);
     } else if (templateId === 'lower') {
       base = LOWER_EXERCISES();
@@ -1441,33 +1454,53 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
       base = UPPER_EXERCISES();
     }
 
-    const intel = { survival: null, deload: null, plateaus: [] };
+    const banners = [];
     let ex = base;
 
-    if (survivalMode && !activeWorkout?.exercises?.length) {
-      const result = applySurvivalMode(ex);
-      ex = result.exercises;
-      intel.survival = result;
+    if (survivalMode) {
+      const cut = applySurvivalMode(ex, survivalVolumePct);
+      ex = cut.exercises;
+      banners.push({
+        type: 'survival',
+        title: 'Tryb Przetrwania',
+        message: `Autoregulacja −${Math.round(cut.volumeReductionPct * 100)}% objętości`,
+        detail: cut.removedSets > 0
+          ? `Usunięto ${cut.removedSets} serii · Smith et al. 2020; Gabbett 2016`
+          : 'Objętość już minimalna',
+      });
     }
 
-    if (autoDeloadEnabled && !activeWorkout?.exercises?.length) {
-      const plateaus = detectExercisePlateaus(workoutHistory);
-      if (plateaus.length) {
-        const result = applyAutoDeload(ex, plateaus.map((p) => p.key));
-        ex = result.exercises;
-        intel.deload = result;
-        intel.plateaus = plateaus;
+    if (autoDeloadEnabled) {
+      const deloadRec = evaluateDeloadRecommendation(workoutHistory, ex);
+      if (deloadRec.shouldApply) {
+        const deloadKeys = [
+          ...deloadRec.plateaus.map((p) => p.key),
+          ...(deloadRec.rpeCreeps ?? []).map((p) => p.key),
+        ];
+        const deload = applyAutoDeload(ex, deloadKeys);
+        ex = deload.exercises;
+        if (deload.affectedCount > 0) {
+          const names = [
+            ...deloadRec.plateaus.map((p) => p.name),
+            ...(deloadRec.rpeCreeps ?? []).map((p) => `${p.name} RPE+${p.rpeRise}`),
+          ].slice(0, 2).join(', ');
+          banners.push({
+            type: 'deload',
+            title: 'Auto-Deload',
+            message: `Reaktywny deload −${Math.round(deloadRec.loadReductionPct * 100)}% obciążenia`,
+            detail: `${deload.affectedCount} ćwiczeń · ${names} · Traps et al. 2024`,
+          });
+        }
       }
     }
 
-    return { initialExercises: ex, workoutIntel: intel };
-  }, []);
+    return { initialExercises: ex, intelBanners: banners };
+  }, [activeWorkout, customExercises, templateId, survivalMode, survivalVolumePct, autoDeloadEnabled, workoutHistory]);
 
   const initialTimerSec = activeWorkout?.timerSec ?? 0;
 
   const [exercises, setExercises]           = useState(initialExercises);
   const restSessionKeyRef                   = useRef(0);
-  // Oryginalna kolejność ID — używana przy przywracaniu po rozłączeniu super-serii
   const originalOrderRef = useRef(initialExercises.map((ex) => ex.id));
 
   // ── Tryb Domowy ──────────────────────────────────────────────────────────────
@@ -1499,6 +1532,7 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   const [infoExercise, setInfoExercise]     = useState(null);
   const [summaryVisible, setSummaryVisible] = useState(false);
   const [prData, setPRData]               = useState(null);
+  const [pendingRpePrompt, setPendingRpePrompt] = useState(null);
   const [muscleModalVisible, setMuscleModalVisible]       = useState(false);
   const [isPlateCalcVisible, setIsPlateCalcVisible]       = useState(false);
   const [selectedWeightForCalc, setSelectedWeightForCalc] = useState(0);
@@ -1506,7 +1540,7 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   const [sessionNote, setSessionNote]                     = useState('');
   const [intelDismissed, setIntelDismissed]               = useState(false);
 
-  const showIntelBanner = !intelDismissed && (workoutIntel.survival || workoutIntel.deload);
+  const showIntelBanner = !intelDismissed && intelBanners.length > 0;
 
   // ZADANIE 1: InteractionManager – lista renderowana po zakończeniu animacji wejścia
   const [isReady, setIsReady] = useState(false);
@@ -1641,13 +1675,25 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
   const confirmFirstPendingSet = useCallback(() => {
     setExercises((prev) => {
       let found = false;
-      return prev.map((ex) => ({
+      return prev.map((ex, exIdx) => ({
         ...ex,
         sets: ex.sets.map((s, si) => {
           if (!s.done && !found) {
             found = true;
+            const rpeVal = s.rpe || inferDefaultRpe(ex.sets, s.id);
+            const completed = { ...s, done: true, rpe: rpeVal };
+            if (isPersonalRecord(completed, ex.sets)) {
+              setTimeout(() => setPRData({
+                exerciseName: ex.name,
+                newKg: completed.kg,
+                newReps: completed.reps,
+              }), 150);
+            }
+            if (!s.rpe) {
+              setTimeout(() => setPendingRpePrompt({ exIdx, setId: s.id }), 200);
+            }
             showRestBanner(`${ex.name} – s.${si + 1}`, getSetRestDuration(ex, s));
-            return { ...s, done: true };
+            return completed;
           }
           return s;
         }),
@@ -1666,21 +1712,40 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
       const ex  = prev[exIdx];
       const set = ex.sets.find((s) => s.id === setId);
       if (set?.done) {
+        setPendingRpePrompt((p) =>
+          (p?.exIdx === exIdx && p?.setId === setId ? null : p));
         return prev.map((e, i) =>
           i !== exIdx ? e : { ...e, sets: e.sets.map((s) => s.id === setId ? { ...s, done: false } : s) }
         );
       }
-      const prevKg = parseFloat((set?.prevLog ?? '').split(' ')[0]);
-      const newKg  = parseFloat(set?.kg ?? '');
-      const hasPrevLog = set?.prevLog && set.prevLog !== '—' && !isNaN(prevKg) && prevKg > 0;
-      const isPR = set && hasPrevLog && !isNaN(newKg) && newKg > prevKg;
-      if (set && isPR) {
-        setTimeout(() => setPRData({ exerciseName: ex.name, newKg: set.kg, newReps: set.reps }), 150);
+
+      const completedSet = {
+        ...set,
+        done: true,
+        rpe: set.rpe || inferDefaultRpe(ex.sets, setId),
+      };
+
+      if (isPersonalRecord(completedSet, ex.sets)) {
+        setTimeout(() => setPRData({
+          exerciseName: ex.name,
+          newKg: completedSet.kg,
+          newReps: completedSet.reps,
+        }), 150);
       }
+
+      if (!set.rpe) {
+        setTimeout(() => setPendingRpePrompt({ exIdx, setId }), 200);
+      }
+
       const si = ex.sets.findIndex((s) => s.id === setId);
       showRestBanner(`${ex.name} – s.${si + 1}`, getSetRestDuration(ex, set));
       return prev.map((e, i) =>
-        i !== exIdx ? e : { ...e, sets: e.sets.map((s) => s.id === setId ? { ...s, done: true } : s) }
+        i !== exIdx
+          ? e
+          : {
+            ...e,
+            sets: e.sets.map((s) => (s.id === setId ? completedSet : s)),
+          }
       );
     });
   }, [showRestBanner]);
@@ -2044,6 +2109,26 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
             onMuscleMapPress={() => setMuscleModalVisible(true)}
           />
 
+          {showIntelBanner && (
+            <View style={styles.intelBanner}>
+              <View style={styles.intelBannerText}>
+                {intelBanners.map((b, i) => (
+                  <View key={i} style={{ marginBottom: i < intelBanners.length - 1 ? 6 : 0 }}>
+                    <Text style={styles.intelBannerLine}>
+                      {b.type === 'survival' ? '🛡️' : '📉'} {b.title}: {b.message}
+                    </Text>
+                    {b.detail ? (
+                      <Text style={styles.intelBannerDetail}>{b.detail}</Text>
+                    ) : null}
+                  </View>
+                ))}
+              </View>
+              <TouchableOpacity onPress={() => setIntelDismissed(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* ZADANIE 1: ScrollView z optymalizacjami wydajności + skeleton */}
           <ScrollView
             contentContainerStyle={styles.scrollContent}
@@ -2107,6 +2192,8 @@ export default function ActiveWorkoutScreen({ navigation, route }) {
                         bodyWeight={bodyWeight}
                         onUpdateBodyWeight={() => { setTempBW(String(bodyWeight)); setBWModalVisible(true); }}
                         onApplyRamp={handleApplyRamp}
+                        pendingRpePrompt={pendingRpePrompt}
+                        onClearRpePrompt={() => setPendingRpePrompt(null)}
                       />
                       {showConnector && (
                         <SupersetConnector
@@ -2345,6 +2432,22 @@ const makeStyles = (c) => StyleSheet.create({
   homeReplacementText: {
     fontSize: 10, fontWeight: '500', color: '#EF9F27', letterSpacing: 0.3,
   },
+
+  intelBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    backgroundColor: c.backgroundSecondary,
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 0.5,
+    borderColor: c.border,
+    gap: 10,
+  },
+  intelBannerText: { flex: 1, gap: 4 },
+  intelBannerLine: { fontSize: 12, color: c.textPrimary, lineHeight: 17, fontWeight: '600' },
+  intelBannerDetail: { fontSize: 11, color: c.textSecondary, lineHeight: 16, marginTop: 2 },
 
   restBanner:     { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: c.backgroundSecondary, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20, borderTopWidth: 0.5, borderColor: c.border },
   restTop:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },

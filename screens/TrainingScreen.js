@@ -3,6 +3,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRef, useState } from 'react';
 import { useWorkoutContext } from '../context/WorkoutContext';
 import { useTheme } from '../context/ThemeContext';
+import { evaluateSurvivalRecommendation } from '../utils/trainingIntelligence';
+import { buildReadinessOpts } from '../utils/profileAnalytics';
+import { classifySessionSplit } from '../utils/trainingLoad';
 
 const BUILTIN_TEMPLATES = [
   { id: 'upper', tag: 'Góra ciała', title: 'Upper Power',    meta: '5 ćwiczeń · klatka, barki, triceps, biceps' },
@@ -28,12 +31,60 @@ const formatTime = (s) =>
   [Math.floor(s / 3600), Math.floor((s % 3600) / 60), s % 60]
     .map((v) => String(v).padStart(2, '0')).join(':');
 
+const inferSplitFromParams = (params) => {
+  if (params?.templateId === 'upper') return 'upper';
+  if (params?.templateId === 'lower') return 'lower';
+
+  const fromContent = classifySessionSplit({
+    workoutName: params?.templateName ?? params?.workoutName,
+    exercises: params?.customExercises ?? [],
+  });
+  if (fromContent === 'upper' || fromContent === 'lower') return fromContent;
+
+  const name = (params?.templateName ?? params?.workoutName ?? '').toLowerCase();
+  if (/upper|gora|góra/.test(name)) return 'upper';
+  if (/lower|dol|dół|nogi/.test(name)) return 'lower';
+  return null;
+};
+
 export default function TrainingScreen({ navigation }) {
-  const { activeWorkout, customPlans, deleteCustomPlan, hiddenBuiltins, hideBuiltin } = useWorkoutContext();
+  const {
+    activeWorkout, customPlans, deleteCustomPlan, hiddenBuiltins, hideBuiltin,
+    workoutHistory, survivalModeEnabled, dailyWellness,
+  } = useWorkoutContext();
   const { colors } = useTheme();
   const styles = makeStyles(colors);
   const [manageMode, setManageMode] = useState(false);
   const manageModeAnim = useRef(new Animated.Value(0)).current;
+
+  const startWorkout = (params) => {
+    const split = inferSplitFromParams(params);
+    const assessment = evaluateSurvivalRecommendation(
+      workoutHistory,
+      buildReadinessOpts(dailyWellness, split),
+    );
+    if (survivalModeEnabled && assessment.shouldOffer) {
+      const pct = Math.round(assessment.volumeReductionPct * 100);
+      Alert.alert(
+        'Tryb Przetrwania',
+        `${assessment.rationale}\n\nSkrócić dzisiejszy plan o ~${pct}% objętości?`,
+        [
+          { text: 'Normalny trening', onPress: () => navigation.navigate('ActiveWorkout', params) },
+          {
+            text: 'Tryb Przetrwania',
+            style: 'destructive',
+            onPress: () => navigation.navigate('ActiveWorkout', {
+              ...params,
+              survivalMode: true,
+              survivalVolumePct: assessment.volumeReductionPct,
+            }),
+          },
+        ],
+      );
+      return;
+    }
+    navigation.navigate('ActiveWorkout', params);
+  };
 
   const toggleManageMode = () => {
     const next = !manageMode;
@@ -104,7 +155,7 @@ export default function TrainingScreen({ navigation }) {
       activeOpacity={0.7}
       onPress={() => {
         if (manageMode) return;
-        navigation.navigate('ActiveWorkout', {
+        startWorkout({
           templateId:       item.id,
           templateName:     item.title,
           customExercises:  item.exercises ?? null,
@@ -172,7 +223,7 @@ export default function TrainingScreen({ navigation }) {
             <TouchableOpacity
               style={styles.startButton}
               activeOpacity={0.85}
-              onPress={() => navigation.navigate('ActiveWorkout', {
+              onPress={() => startWorkout({
                 templateId:      null,
                 templateName:    'Pusty trening',
                 customExercises: [],

@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import LiveMuscleMap from '../LiveMuscleMap';
 import { useTheme } from '../../context/ThemeContext';
 import useMuscleHeatmap from '../../hooks/useMuscleHeatmap';
+import { collectSessionPRs } from '../../utils/prDetection';
 
 const KG_PER_CAR = 1500;
 
@@ -14,18 +15,6 @@ const fmtDur = (s) => {
   return `${sc}s`;
 };
 
-const detectPRs = (exercises) =>
-  exercises.reduce((acc, ex) => {
-    const prs = ex.sets.filter(
-      (s) => s.done && s.kg && parseFloat(s.kg) > parseFloat((s.prevLog ?? '').split(' ')[0]),
-    );
-    if (prs.length > 0) {
-      const best = prs.reduce((a, s) => (parseFloat(s.kg) > parseFloat(a.kg) ? s : a));
-      acc.push({ name: ex.name, kg: best.kg, reps: best.reps });
-    }
-    return acc;
-  }, []);
-
 const WorkoutSummaryModal = ({ isVisible, onClose, summaryData, onSave }) => {
   const { colors } = useTheme();
   const s = makeStyles(colors);
@@ -33,7 +22,7 @@ const WorkoutSummaryModal = ({ isVisible, onClose, summaryData, onSave }) => {
   const { totalSec = 0, totalTonnage = 0, exercises = [], workoutName = '', sessionNote = '' } = summaryData ?? {};
 
   const cars     = Math.floor(totalTonnage / KG_PER_CAR);
-  const prs      = useMemo(() => detectPRs(exercises), [exercises]);
+  const prs      = useMemo(() => collectSessionPRs(exercises), [exercises]);
   const doneSets = exercises.reduce((a, ex) => a + ex.sets.filter((s) => s.done).length, 0);
   const heatmap  = useMuscleHeatmap(exercises);
 

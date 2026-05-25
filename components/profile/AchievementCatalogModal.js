@@ -26,7 +26,7 @@ const STATUS_FILTERS = [
   { id: 'locked', label: 'Zablokowane' },
 ];
 
-export default function AchievementCatalogModal({ visible, onClose }) {
+export default function AchievementCatalogModal({ visible, onClose, onSelectBadge }) {
   const { colors } = useTheme();
   const { badges, unlockedCount, totalCount } = useAchievements();
   const [query, setQuery] = useState('');
@@ -171,8 +171,10 @@ export default function AchievementCatalogModal({ visible, onClose }) {
 
                 <View style={s.grid}>
                   {section.badges.map((badge) => (
-                    <View
+                    <TouchableOpacity
                       key={badge.id}
+                      activeOpacity={0.85}
+                      onPress={() => onSelectBadge?.(badge)}
                       style={[
                         s.rowCard,
                         { backgroundColor: colors.card, borderColor: badge.isUnlocked ? section.color : colors.border },
@@ -196,7 +198,7 @@ export default function AchievementCatalogModal({ visible, onClose }) {
                           <Text style={[s.rowMeta, { color: colors.textTertiary }]}>Zablokowane</Text>
                         )}
                       </View>
-                    </View>
+                    </TouchableOpacity>
                   ))}
                 </View>
               </View>

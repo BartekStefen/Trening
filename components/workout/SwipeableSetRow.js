@@ -83,14 +83,16 @@ const rpeToRir = (rpe) => {
   return isNaN(n) ? null : Math.max(0, Math.round(10 - n));
 };
 
-const RpeInlinePicker = ({ currentRpe, onSelect, onClose, colors, useRIR }) => {
+const RpeInlinePicker = ({ currentRpe, onSelect, onClose, colors, useRIR, isReminder }) => {
   const styles = makeStyles(colors);
   return (
     <View style={styles.rpePicker}>
       <View style={styles.rpePickerHeader}>
         <Ionicons name="flame-outline" size={13} color={colors.warning} />
         <Text style={styles.rpePickerTitle}>
-          {useRIR ? 'RIR — powtórzenia w zapasie' : 'RPE — wybierz intensywność'}
+          {isReminder
+            ? (useRIR ? 'Potwierdź RIR po serii' : 'Potwierdź RPE po serii')
+            : (useRIR ? 'RIR — powtórzenia w zapasie' : 'RPE — wybierz intensywność')}
         </Text>
         <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="close" size={16} color={colors.textTertiary} />
@@ -281,6 +283,8 @@ const SwipeableSetRow = ({
   isBWWeighted,     // ćwiczenie z masą własną + obciążenie (np. podciąganie z pasem)
   bodyWeight,       // waga ciała z profilu (kg)
   onUpdateBodyWeight, // callback — otwiera modal do aktualizacji wagi ciała
+  openRpePicker,
+  onRpePickerOpened,
 }) => {
   const { prevLog, kg, reps, rpe, done, suggested, aiSuggested, isDropSet, plannedReps } = setData;
   const [aiOpen, setAiOpen]           = useState(false);
@@ -294,6 +298,13 @@ const SwipeableSetRow = ({
   const rpeDisplayLabel = rpe
     ? (useRIR ? String(rpeToRir(rpe)) : rpe)
     : (useRIR ? 'RIR' : 'RPE');
+
+  useEffect(() => {
+    if (openRpePicker && done) {
+      setRpePickerOpen(true);
+      onRpePickerOpened?.();
+    }
+  }, [openRpePicker, done, onRpePickerOpened]);
 
   const flashRow = () => {
     flashAnim.setValue(1);
@@ -488,6 +499,7 @@ const SwipeableSetRow = ({
             onClose={() => setRpePickerOpen(false)}
             colors={colors}
             useRIR={useRIR}
+            isReminder={openRpePicker}
           />
         )}
 

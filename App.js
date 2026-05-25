@@ -10,6 +10,7 @@ import { ThemeProvider }          from './context/ThemeContext';
 import { ProfileGoalsProvider }   from './context/ProfileGoalsContext';
 import { DietProvider }           from './context/DietContext';
 import { AchievementsProvider }   from './context/AchievementsContext';
+import { StrengthRingsProvider }  from './context/StrengthRingsContext';
 import AchievementUnlockBanner    from './components/shared/AchievementUnlockBanner';
 import { useTheme }               from './context/ThemeContext';
 import OnboardingScreen           from './screens/OnboardingScreen';
@@ -98,11 +99,13 @@ export default function App() {
         <ThemeProvider>
           <ProfileGoalsProvider>
             <DietProvider>
-              <AchievementsProvider>
-                <AppNavigator />
-                <OnboardingScreen />
-                <AchievementUnlockBanner />
-              </AchievementsProvider>
+              <StrengthRingsProvider>
+                <AchievementsProvider>
+                  <AppNavigator />
+                  <OnboardingScreen />
+                  <AchievementUnlockBanner />
+                </AchievementsProvider>
+              </StrengthRingsProvider>
             </DietProvider>
           </ProfileGoalsProvider>
         </ThemeProvider>

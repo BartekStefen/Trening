@@ -1,13 +1,14 @@
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useDietContext } from '../context/DietContext';
+import { useProfileGoals } from '../context/ProfileGoalsContext';
+import { DEFAULT_NUTRITION } from '../constants/dietNutrition';
+import { targetCalories } from '../utils/tdee';
+import CalorieThermometer from '../components/diet/CalorieThermometer';
 
 // ─── Stałe konfiguracyjne ────────────────────────────────────────────────────
-
-const DAILY_GOAL_KCAL = 3000;
-const EATEN_KCAL      = 1500;
 
 // Kolory makroskładników są semantyczne (zielony=białko, pomarańczowy=tłuszcz,
 // niebieski=węgle) — niezależne od motywu aplikacji.
@@ -110,13 +111,19 @@ export default function DietScreen() {
     getPortionsForDate, addWaterPortion,
     weatherBoostActive, weatherLabel, weatherHumidity, weatherLoading,
   } = useDietContext();
+  const { tdee, goalPace } = useProfileGoals();
   const styles = makeStyles(colors);
 
   const weekDays    = generateWeekDays();
   const activeDay   = weekDays.find((d) => d.id === activeDayId) ?? weekDays[2];
   const filledPortions = getPortionsForDate(activeDay.dateKey);
-  const remaining   = DAILY_GOAL_KCAL - EATEN_KCAL;
-  const kcalPercent = Math.min((EATEN_KCAL / DAILY_GOAL_KCAL) * 100, 100);
+
+  const goalKcal = useMemo(
+    () => (tdee != null ? targetCalories(tdee, goalPace) : DEFAULT_NUTRITION.kcalGoal),
+    [tdee, goalPace],
+  );
+  const eatenKcal = DEFAULT_NUTRITION.kcalEaten;
+  const remaining = goalKcal - eatenKcal;
   const waterMl     = filledPortions * portionMl;
 
   const handleAddWater = () => {
@@ -161,7 +168,7 @@ export default function DietScreen() {
         <View style={styles.kcalRow}>
           <View>
             <Text style={styles.kcalLabel}>Zjedzone</Text>
-            <Text style={styles.kcalValue}>{EATEN_KCAL.toLocaleString('pl-PL')}</Text>
+            <Text style={styles.kcalValue}>{eatenKcal.toLocaleString('pl-PL')}</Text>
           </View>
           <View style={styles.kcalCenter}>
             <Text style={styles.kcalLabel}>Pozostało</Text>
@@ -171,13 +178,11 @@ export default function DietScreen() {
           </View>
           <View style={styles.kcalRight}>
             <Text style={styles.kcalLabel}>Cel</Text>
-            <Text style={styles.kcalGoal}>{DAILY_GOAL_KCAL.toLocaleString('pl-PL')} kcal</Text>
+            <Text style={styles.kcalGoal}>{goalKcal.toLocaleString('pl-PL')} kcal</Text>
           </View>
         </View>
 
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${kcalPercent}%`, backgroundColor: colors.accent }]} />
-        </View>
+        <CalorieThermometer eaten={eatenKcal} goal={goalKcal} />
 
         <View style={styles.macroRow}>
           <MacroBar label="Białko"   {...MACRO_RANGES.protein} trackColor={colors.border} />
@@ -294,7 +299,11 @@ const makeStyles = (c) => StyleSheet.create({
     backgroundColor: c.card, marginHorizontal: 16, marginBottom: 12,
     borderRadius: 20, padding: 18, borderWidth: 0.5, borderColor: c.border,
   },
-  kcalRow:    { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
+  kcalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
   kcalCenter: { alignItems: 'center' },
   kcalRight:  { alignItems: 'flex-end' },
   kcalLabel:  { fontSize: 12, color: c.textSecondary, marginBottom: 4 },
@@ -302,11 +311,6 @@ const makeStyles = (c) => StyleSheet.create({
   kcalGreen:  { color: c.accent },
   kcalRed:    { color: c.danger },
   kcalGoal:   { fontSize: 15, fontWeight: '500', color: c.textSecondary, marginTop: 4 },
-  progressTrack: {
-    height: 8, backgroundColor: c.border, borderRadius: 8,
-    overflow: 'hidden', marginBottom: 16,
-  },
-  progressFill: { height: '100%', borderRadius: 8 },
   macroRow:     { flexDirection: 'row', gap: 12 },
 
   waterCard: {

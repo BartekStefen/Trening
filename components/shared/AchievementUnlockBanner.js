@@ -1,35 +1,58 @@
 import { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, Easing, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
 import { useAchievements } from '../../context/AchievementsContext';
+import BadgeShield from '../profile/BadgeShield';
 import { ACHIEVEMENT_TIERS } from '../../utils/achievements';
 
-const DISMISS_MS = 4500;
+const DISMISS_MS = 5000;
 
 export default function AchievementUnlockBanner() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { activeToastBadge, dismissToast } = useAchievements();
-  const slide = useRef(new Animated.Value(-120)).current;
+  const slide = useRef(new Animated.Value(-140)).current;
+  const pulse = useRef(new Animated.Value(1)).current;
+  const glow = useRef(new Animated.Value(0.4)).current;
   const timerRef = useRef(null);
 
   useEffect(() => {
     if (!activeToastBadge) {
-      Animated.timing(slide, { toValue: -120, duration: 220, useNativeDriver: true }).start();
+      Animated.timing(slide, { toValue: -140, duration: 220, useNativeDriver: true }).start();
       return undefined;
     }
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    Animated.spring(slide, { toValue: 0, useNativeDriver: true, friction: 8, tension: 80 }).start();
+    slide.setValue(-140);
+    Animated.spring(slide, { toValue: 0, useNativeDriver: true, friction: 7, tension: 70 }).start();
+
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1.08, duration: 700, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ]),
+    );
+    const glowLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(glow, { toValue: 0.85, duration: 700, useNativeDriver: true }),
+        Animated.timing(glow, { toValue: 0.35, duration: 700, useNativeDriver: true }),
+      ]),
+    );
+    pulseLoop.start();
+    glowLoop.start();
 
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => dismissToast(), DISMISS_MS);
 
-    return () => clearTimeout(timerRef.current);
-  }, [activeToastBadge, dismissToast, slide]);
+    return () => {
+      pulseLoop.stop();
+      glowLoop.stop();
+      clearTimeout(timerRef.current);
+    };
+  }, [activeToastBadge, dismissToast, slide, pulse, glow]);
 
   if (!activeToastBadge) return null;
 
@@ -47,23 +70,33 @@ export default function AchievementUnlockBanner() {
       pointerEvents="box-none"
     >
       <TouchableOpacity
-        activeOpacity={0.9}
+        activeOpacity={0.92}
         onPress={dismissToast}
-        style={[s.banner, { backgroundColor: colors.card, borderColor: tier.color }]}
+        style={[s.banner, { backgroundColor: colors.card, borderColor: `${tier.color}66` }]}
       >
-        <View style={[s.iconWrap, { backgroundColor: `${tier.color}33`, borderColor: tier.color }]}>
-          <Ionicons name={activeToastBadge.icon} size={24} color={tier.color} />
-        </View>
+        <View style={[s.accentStrip, { backgroundColor: tier.color }]} />
+
+        <Animated.View style={{ transform: [{ scale: pulse }] }}>
+          <View style={[s.shieldGlow, { backgroundColor: tier.color, opacity: glow }]} />
+          <BadgeShield
+            badge={{ ...activeToastBadge, isUnlocked: true }}
+            colors={colors}
+            size="sm"
+            showTitle={false}
+            showProgress={false}
+          />
+        </Animated.View>
+
         <View style={s.textCol}>
-          <Text style={[s.kicker, { color: tier.color }]}>Odblokowano osiągnięcie!</Text>
+          <Text style={[s.kicker, { color: tier.color }]}>Nowe osiągnięcie!</Text>
           <Text style={[s.title, { color: colors.textPrimary }]} numberOfLines={1}>
             {activeToastBadge.title}
           </Text>
           <Text style={[s.sub, { color: colors.textSecondary }]}>
-            Ranga: {tier.label}
+            Ranga {tier.label}
           </Text>
         </View>
-        <Ionicons name="close" size={20} color={colors.textTertiary} />
+        <Ionicons name="chevron-down" size={18} color={colors.textTertiary} />
       </TouchableOpacity>
     </Animated.View>
   );
@@ -82,25 +115,35 @@ const s = StyleSheet.create({
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    padding: 14,
+    gap: 10,
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingVertical: 12,
+    paddingRight: 14,
+    paddingLeft: 0,
+    overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
   },
-  iconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    borderWidth: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
+  accentStrip: {
+    width: 5,
+    alignSelf: 'stretch',
+    marginRight: 8,
+    borderTopLeftRadius: 18,
+    borderBottomLeftRadius: 18,
+  },
+  shieldGlow: {
+    position: 'absolute',
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignSelf: 'center',
+    top: -4,
   },
   textCol: { flex: 1, gap: 2 },
-  kicker: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.4 },
-  title: { fontSize: 16, fontWeight: '700' },
-  sub: { fontSize: 12 },
+  kicker: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  title: { fontSize: 16, fontWeight: '800' },
+  sub: { fontSize: 12, fontWeight: '600' },
 });

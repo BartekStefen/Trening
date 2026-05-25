@@ -95,6 +95,13 @@ Jednym rzutem oka widać, czy np. plecy są zaniedbane w porównaniu z klatą. P
 Pomaga zobaczyć, czy np. plecy są realnie trenowane tak często, jak klatka.`,
   },
 
+  strengthRings: {
+    simple: `Trzy pierścienie: Dzień, Makro i Rytm. Edycja na profilu (stuknij pierścień) albo w Ustawieniach → Pierścienie.
+
+Dostępne m.in.: tonaż, woda, białko, wellness, serie treningów, rekordy 1RM, XP.`,
+    detail: `Każdy pierścień ma własną listę metryk (bez powielania kcal w pierścieniu Dzień). Pierścień 2 skupia kalorie i makra. Konfiguracja zapisywana lokalnie — wspólna dla profilu i ustawień.`,
+  },
+
   badges: {
     simple: `Na profilu widzisz 3 podglądy tarcz. Stuknij sekcję, aby otworzyć pełny katalog z rangami (miedź → legenda), wyszukiwarką i filtrami.
 

@@ -2,7 +2,10 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getNextAudioMode, AUDIO_MODES } from '../utils/audioAssistantConstants';
-import { normExerciseName } from '../utils/workoutAutoregulation';
+import { exerciseKey } from '../utils/trainingIntelligence';
+import { DEFAULT_DAILY_HABITS } from '../constants/dailyHabits';
+import { normalizeWellnessForToday } from '../constants/wellnessDefaults';
+import { enrichWorkoutLoad } from '../utils/trainingLoad';
 
 const STORAGE_PLANS    = '@fitness_custom_plans';
 const STORAGE_HISTORY  = '@fitness_workout_history';
@@ -14,6 +17,8 @@ const STORAGE_HIDDEN_BUILTINS = '@fitness_hidden_builtins';
 const STORAGE_SURVIVAL = '@fitness_survival_mode';
 const STORAGE_AUTO_DELOAD = '@fitness_auto_deload';
 const STORAGE_EX_RECORDS = '@fitness_exercise_records';
+const STORAGE_DAILY_HABITS = '@fitness_daily_habits';
+const STORAGE_DAILY_WELLNESS = '@fitness_daily_wellness';
 
 // ─── Kontekst globalny aplikacji fitness ──────────────────────────────────────
 // Stan globalny: zminimalizowany trening, plany użytkownika, historia
@@ -30,13 +35,15 @@ export function WorkoutProvider({ children }) {
   const [survivalModeEnabled, setSurvivalModeEnabled] = useState(false);
   const [autoDeloadEnabled, setAutoDeloadEnabled]     = useState(false);
   const [exerciseRecords, setExerciseRecords]         = useState({});
+  const [dailyHabits, setDailyHabits]                 = useState(DEFAULT_DAILY_HABITS);
+  const [dailyWellness, setDailyWellness]             = useState(() => normalizeWellnessForToday(null));
   const [hydrated, setHydrated]               = useState(false);
 
   // Ładowanie danych z AsyncStorage przy starcie
   useEffect(() => {
     (async () => {
       try {
-        const [plans, history, rir, ramp, audio, audioLegacy, hidden, survival, deload, records] = await Promise.all([
+        const [plans, history, rir, ramp, audio, audioLegacy, hidden, survival, deload, records, habits, wellness] = await Promise.all([
           AsyncStorage.getItem(STORAGE_PLANS),
           AsyncStorage.getItem(STORAGE_HISTORY),
           AsyncStorage.getItem(STORAGE_USE_RIR),
@@ -47,6 +54,8 @@ export function WorkoutProvider({ children }) {
           AsyncStorage.getItem(STORAGE_SURVIVAL),
           AsyncStorage.getItem(STORAGE_AUTO_DELOAD),
           AsyncStorage.getItem(STORAGE_EX_RECORDS),
+          AsyncStorage.getItem(STORAGE_DAILY_HABITS),
+          AsyncStorage.getItem(STORAGE_DAILY_WELLNESS),
         ]);
         if (plans)   setCustomPlans(JSON.parse(plans));
         if (history) setWorkoutHistory(JSON.parse(history));
@@ -61,6 +70,13 @@ export function WorkoutProvider({ children }) {
         if (survival !== null) setSurvivalModeEnabled(survival === 'true');
         if (deload !== null) setAutoDeloadEnabled(deload === 'true');
         if (records) setExerciseRecords(JSON.parse(records));
+        if (habits) {
+          const parsed = JSON.parse(habits);
+          if (Array.isArray(parsed) && parsed.length) setDailyHabits(parsed);
+        }
+        if (wellness) {
+          setDailyWellness(normalizeWellnessForToday(JSON.parse(wellness)));
+        }
       } catch {}
       setHydrated(true);
     })();
@@ -125,7 +141,7 @@ export function WorkoutProvider({ children }) {
   }, [autoDeloadEnabled]);
 
   const updateExerciseRecord = useCallback(async (exerciseName, oneRM, meta = {}) => {
-    const key = normExerciseName(exerciseName);
+    const key = meta.exerciseId ?? exerciseKey({ name: exerciseName });
     if (!key || !oneRM) return;
     setExerciseRecords((prev) => {
       const next = {
@@ -138,6 +154,22 @@ export function WorkoutProvider({ children }) {
         },
       };
       AsyncStorage.setItem(STORAGE_EX_RECORDS, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  const toggleDailyHabit = useCallback((id) => {
+    setDailyHabits((prev) => {
+      const next = prev.map((h) => (h.id === id ? { ...h, done: !h.done } : h));
+      AsyncStorage.setItem(STORAGE_DAILY_HABITS, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  const setWellnessValue = useCallback((key, value) => {
+    setDailyWellness((prev) => {
+      const next = normalizeWellnessForToday({ ...prev, [key]: value });
+      AsyncStorage.setItem(STORAGE_DAILY_WELLNESS, JSON.stringify(next)).catch(() => {});
       return next;
     });
   }, []);
@@ -207,8 +239,9 @@ export function WorkoutProvider({ children }) {
 
   const saveWorkoutToHistory = useCallback((data) => {
     stopBgTimer();
+    const enriched = enrichWorkoutLoad(data);
     setWorkoutHistory((prev) => [
-      { ...data, id: Date.now().toString(), savedAt: new Date().toISOString() },
+      { ...enriched, id: Date.now().toString(), savedAt: new Date().toISOString() },
       ...prev,
     ]);
     setActiveWorkout(null);
@@ -239,6 +272,8 @@ export function WorkoutProvider({ children }) {
       survivalModeEnabled, toggleSurvivalMode,
       autoDeloadEnabled, toggleAutoDeload,
       exerciseRecords, updateExerciseRecord,
+      dailyHabits, toggleDailyHabit,
+      dailyWellness, setWellnessValue,
       hydrated,
     }}>
       {children}

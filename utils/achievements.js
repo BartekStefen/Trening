@@ -187,3 +187,46 @@ export function pickPreviewBadges(badges, count = 3) {
   }
   return picked.slice(0, count);
 }
+
+/** Odznaka najbliższa odblokowania (locked, z progress > 0). */
+export function findClosestToUnlock(badges) {
+  const candidates = badges.filter(
+    (b) => !b.isUnlocked && b.progress != null && b.progress > 0,
+  );
+  if (!candidates.length) return null;
+  return candidates.reduce((best, b) => (
+    (b.progress ?? 0) > (best.progress ?? 0) ? b : best
+  ));
+}
+
+function pluralPl(n, one, few, many) {
+  if (n === 1) return one;
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
+  return many;
+}
+
+/** Krótki tekst „ile zostało” do odznaki. */
+export function getRemainingHint(badge, stats) {
+  const def = ACHIEVEMENT_BY_ID[badge.id] ?? badge;
+  if (!def.progressKey || !def.target) return null;
+  const current = stats[def.progressKey] ?? 0;
+  const left = Math.max(0, def.target - current);
+  if (left <= 0) return null;
+
+  switch (def.progressKey) {
+    case 'sessions':
+      return `Jeszcze ${left} ${pluralPl(left, 'trening', 'treningi', 'treningów')}`;
+    case 'totalTonnage':
+      return `Jeszcze ${left.toLocaleString('pl-PL')} kg tonażu`;
+    case 'recordCount':
+      return `Jeszcze ${left} ${pluralPl(left, 'rekord', 'rekordy', 'rekordów')}`;
+    case 'customPlanCount':
+      return `Jeszcze ${left} ${pluralPl(left, 'plan', 'plany', 'planów')}`;
+    case 'level':
+      return `Jeszcze ${left} ${pluralPl(left, 'poziom', 'poziomy', 'poziomów')} XP`;
+    default:
+      return null;
+  }
+}

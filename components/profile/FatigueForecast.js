@@ -19,7 +19,7 @@ export default function FatigueForecast() {
     <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <CardHeader
         title="Prognoza zmęczenia"
-        subtitle={data.message}
+        subtitle="Indeks regeneracji · ACWR + trend sRPE"
         infoBody={PROFILE_INFO.fatigue}
         compact
       />
@@ -40,12 +40,19 @@ export default function FatigueForecast() {
         })}
       </View>
 
+      <Text style={[s.messageLine, { color: colors.textSecondary }]}>{data.message}</Text>
+
       <View style={[s.trendRow, { backgroundColor: colors.backgroundSecondary }]}>
-        <Text style={[s.trendLbl, { color: colors.textSecondary }]}>Trend objętości (3 tyg.)</Text>
+        <Text style={[s.trendLbl, { color: colors.textSecondary }]}>Trend obciążenia sRPE (3 tyg.)</Text>
         <Text style={[s.trendVal, { color: data.trendPct > 10 ? '#FF5252' : colors.accent }]}>
           {data.trendPct > 0 ? '+' : ''}{data.trendPct}%
         </Text>
       </View>
+      {data.acwr != null && (
+        <Text style={[s.acwrLine, { color: colors.textSecondary }]}>
+          ACWR dziś: {data.acwr} · prognoza +2 tyg.: {data.projectedAcwr2 ?? '—'}
+        </Text>
+      )}
     </View>
   );
 }
@@ -58,7 +65,9 @@ const s = StyleSheet.create({
   barTrack: { width: 36, height: 70, borderRadius: 8, overflow: 'hidden', justifyContent: 'flex-end' },
   barFill: { width: '100%', borderRadius: 8 },
   barLabel: { fontSize: 10, textAlign: 'center' },
+  messageLine: { fontSize: 12, marginBottom: 10, lineHeight: 17 },
   trendRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderRadius: 12, padding: 12 },
   trendLbl: { fontSize: 12 },
   trendVal: { fontSize: 16, fontWeight: '800' },
+  acwrLine: { fontSize: 11, marginTop: 8, textAlign: 'center' },
 });

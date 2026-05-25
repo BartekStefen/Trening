@@ -1,5 +1,14 @@
 // ─── Algorytmy modułu Profil i Analityka ─────────────────────────────────────
 
+import {
+  ACWR_OPTIMAL_HIGH,
+  computeAcwr,
+  computeReadinessFromComponents,
+  computeWeeklySrpeLoads,
+} from './trainingLoad';
+
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+
 export const calcEpley1RM = (kg, reps) => {
   const w = parseFloat(kg);
   const r = parseInt(reps, 10);
@@ -79,113 +88,82 @@ export const computeAsymmetryStats = (workoutHistory) => {
   return { values, pushPullRatio, balanceHint, hasData: max > 1 };
 };
 
-// ─── Prognoza zmęczenia (2 tyg.) ─────────────────────────────────────────────
-export const computeFatigueForecast = (workoutHistory) => {
-  if (!workoutHistory?.length) return { points: [], trendPct: 0, message: 'Brak danych treningowych.' };
-
-  const now = Date.now();
-  const weekMs = 7 * 24 * 3600 * 1000;
-
-  const weeklyVolumes = [];
-  for (let w = 0; w < 6; w++) {
-    const start = now - (w + 1) * weekMs;
-    const end   = now - w * weekMs;
-    const vol = workoutHistory
-      .filter((h) => {
-        const t = new Date(h.savedAt).getTime();
-        return t >= start && t < end;
-      })
-      .reduce((a, h) => a + (h.tonnage ?? 0), 0);
-    weeklyVolumes.unshift({ week: 6 - w, volume: vol });
+// ─── Prognoza zmęczenia (2 tyg.) — sRPE + ACWR ───────────────────────────────
+export const computeFatigueForecast = (workoutHistory, now = Date.now()) => {
+  if (!workoutHistory?.length) {
+    return { points: [], trendPct: 0, message: 'Brak danych treningowych.', acwr: null };
   }
 
-  const recent = weeklyVolumes.slice(-3).map((x) => x.volume);
+  const weeklyLoads = computeWeeklySrpeLoads(workoutHistory, 6, now);
+  const { acwr } = computeAcwr(workoutHistory, now);
+
+  const recent = weeklyLoads.slice(-3).map((x) => x.load);
+  const prev = weeklyLoads.slice(0, 3).map((x) => x.load);
   const avgRecent = recent.reduce((a, b) => a + b, 0) / Math.max(recent.length, 1);
-  const prevAvg = weeklyVolumes.slice(0, 3).reduce((a, x) => a + x.volume, 0) / 3;
+  const prevAvg = prev.reduce((a, b) => a + b, 0) / Math.max(prev.length, 1);
   const trendPct = prevAvg > 0 ? Math.round(((avgRecent - prevAvg) / prevAvg) * 100) : 0;
 
-  // Indeks siły bazowy z najlepszych 1RM z ostatnich 4 tyg.
-  let best1RM = 0;
-  workoutHistory
-    .filter((h) => now - new Date(h.savedAt).getTime() < 4 * weekMs)
-    .forEach((h) => {
-      (h.exercises ?? []).forEach((ex) => {
-        (ex.sets ?? []).filter((s) => s.done).forEach((s) => {
-          const orm = calcEpley1RM(s.kg, s.reps);
-          if (orm && orm > best1RM) best1RM = orm;
-        });
-      });
-    });
+  const acwrPenalty = Math.max(0, (acwr - 1.0) * 22);
+  const trendPenalty = Math.max(0, trendPct * 0.25);
+  const fatiguePenalty = acwrPenalty + trendPenalty;
 
-  const baseStrength = best1RM || 100;
-  const fatigueRate = Math.max(0, trendPct) * 0.003 + (avgRecent > prevAvg * 1.2 ? 0.02 : 0);
+  const todayIndex = Math.round(clamp(100 - acwrPenalty, 55, 100));
+  const week1Index = Math.round(clamp(todayIndex - fatiguePenalty * 0.45, 40, 100));
+  const week2Index = Math.round(clamp(todayIndex - fatiguePenalty, 30, 100));
 
-  const points = [
-    { label: 'Dziś', strength: 100 },
-    { label: '+1 tydz.', strength: Math.round((1 - fatigueRate * 0.5) * 100) },
-    { label: '+2 tyg.', strength: Math.round((1 - fatigueRate) * 100) },
-  ];
+  const projectedAcwr2 = avgRecent > 0 && trendPct > 0
+    ? Math.round(acwr * (1 + trendPct / 100) * 100) / 100
+    : acwr;
 
-  let message = 'Obciążenie stabilne — siła powinna utrzymać poziom.';
-  if (trendPct > 15) message = 'Szybki wzrost objętości — ryzyko kumulacji zmęczenia za ~2 tygodnie.';
-  else if (trendPct > 5) message = 'Umiarkowany wzrost obciążenia — monitoruj regenerację.';
+  let message = 'Obciążenie sRPE stabilne — indeks regeneracji w normie.';
+  if (acwr > ACWR_OPTIMAL_HIGH && trendPct > 5) {
+    message = 'Rosnące obciążenie sRPE i ACWR — rozważ deload lub redukcję objętości za 1–2 tyg.';
+  } else if (acwr > ACWR_OPTIMAL_HIGH) {
+    message = 'ACWR powyżej strefy optymalnej — monitoruj sen i objętość.';
+  } else if (trendPct > 15) {
+    message = 'Szybki wzrost tygodniowego sRPE — ryzyko kumulacji zmęczenia (Meeusen et al.).';
+  } else if (trendPct > 5) {
+    message = 'Umiarkowany wzrost obciążenia — utrzymuj wellness i regenerację.';
+  }
 
-  return { points, trendPct, baseStrength, message, weeklyVolumes };
+  return {
+    points: [
+      { label: 'Dziś', strength: todayIndex },
+      { label: '+1 tydz.', strength: week1Index },
+      { label: '+2 tyg.', strength: week2Index },
+    ],
+    trendPct,
+    acwr,
+    projectedAcwr2,
+    message,
+    weeklyVolumes: weeklyLoads.map((w) => ({ week: w.week, volume: w.load })),
+  };
 };
 
 // ─── Ready-to-Lift Score (1–10) ──────────────────────────────────────────────
+
+export const buildReadinessOpts = (wellness, split = null) => ({ wellness, split });
+
+/** @deprecated Użyj buildReadinessOpts(wellness) */
+export const habitReadinessOpts = () => ({});
+
+const readinessMeta = (score) => {
+  if (score >= 8) return { label: 'Wysoka', color: '#00E676' };
+  if (score >= 6) return { label: 'Dobra', color: '#378ADD' };
+  if (score >= 4) return { label: 'Umiarkowana', color: '#FAC775' };
+  return { label: 'Niska', color: '#FF5252' };
+};
+
 export const computeReadinessScore = (workoutHistory, opts = {}) => {
-  const { sleepOk = false, creatineOk = false } = opts;
-  if (!workoutHistory?.length) {
-    return { score: 5, factors: [], label: 'Umiarkowana', color: '#FAC775' };
-  }
+  const { wellness, now = Date.now(), split } = opts;
+  const result = computeReadinessFromComponents(workoutHistory, wellness, now, { split });
+  const { label, color } = readinessMeta(result.score);
 
-  const now = Date.now();
-  const dayMs = 24 * 3600 * 1000;
-  const last = new Date(workoutHistory[0].savedAt).getTime();
-  const daysSince = (now - last) / dayMs;
-
-  const weekMs = 7 * dayMs;
-  const acuteVol = workoutHistory
-    .filter((h) => now - new Date(h.savedAt).getTime() < weekMs)
-    .reduce((a, h) => a + (h.tonnage ?? 0), 0);
-  const chronicVol = workoutHistory
-    .filter((h) => now - new Date(h.savedAt).getTime() < 4 * weekMs)
-    .reduce((a, h) => a + (h.tonnage ?? 0), 0) / 4;
-  const acwr = chronicVol > 0 ? acuteVol / chronicVol : 1;
-
-  let lastRpe = null;
-  const lastEx = workoutHistory[0]?.exercises ?? [];
-  lastEx.forEach((ex) => {
-    (ex.sets ?? []).filter((s) => s.done && s.rpe).forEach((s) => {
-      const r = parseFloat(s.rpe);
-      if (!isNaN(r)) lastRpe = lastRpe === null ? r : Math.max(lastRpe, r);
-    });
-  });
-
-  let score = 7;
-  const factors = [];
-
-  if (daysSince >= 1 && daysSince <= 2) { score += 1; factors.push({ text: '1–2 dni odpoczynku', impact: +1 }); }
-  else if (daysSince < 1) { score -= 1.5; factors.push({ text: 'Trening wczoraj/dziś', impact: -1.5 }); }
-  else if (daysSince > 5) { score -= 0.5; factors.push({ text: 'Dłuższa przerwa (>5 dni)', impact: -0.5 }); }
-
-  if (acwr > 1.3) { score -= 1.5; factors.push({ text: 'Wysokie obciążenie ostre (ACWR)', impact: -1.5 }); }
-  else if (acwr >= 0.8 && acwr <= 1.2) { score += 0.5; factors.push({ text: 'Optymalne obciążenie tygodniowe', impact: +0.5 }); }
-
-  if (lastRpe !== null && lastRpe >= 9.5) { score -= 1; factors.push({ text: 'Ostatnia sesja bardzo ciężka (RPE 9.5+)', impact: -1 }); }
-  if (sleepOk) { score += 0.5; factors.push({ text: 'Sen odhaczony', impact: +0.5 }); }
-  if (creatineOk) { score += 0.3; factors.push({ text: 'Kreatyna przyjęta', impact: +0.3 }); }
-
-  score = Math.max(1, Math.min(10, Math.round(score * 10) / 10));
-
-  let label = 'Umiarkowana';
-  let color = '#FAC775';
-  if (score >= 8) { label = 'Wysoka'; color = '#00E676'; }
-  else if (score >= 6) { label = 'Dobra'; color = '#378ADD'; }
-  else if (score < 4) { label = 'Niska'; color = '#FF5252'; }
-
-  return { score, factors, label, color, acwr: Math.round(acwr * 100) / 100, daysSince: Math.round(daysSince * 10) / 10 };
+  return {
+    ...result,
+    label,
+    color,
+  };
 };
 
 // ─── Estymacja celu wagowego (redukcja / masa) ───────────────────────────────

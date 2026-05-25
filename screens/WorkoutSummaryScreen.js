@@ -9,6 +9,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useMemo } from 'react';
 import { useWorkout } from '../context/WorkoutContext';
+import { collectSessionPRs } from '../utils/prDetection';
 
 // Przelicznik tonażu na samochody – symboliczny, motywacyjny element grywalizacji.
 // Średnia masa osobówki: 1500 kg
@@ -24,22 +25,7 @@ const formatDuration = (totalSec) => {
   return `${s}s`;
 };
 
-// Wykrywa nowe rekordy: seria zaliczona z wagą większą niż poprzedni log
-const detectPRs = (exercises) =>
-  exercises.reduce((acc, ex) => {
-    const prs = ex.sets.filter((s) => {
-      if (!s.done || !s.kg || !s.reps) return false;
-      const prevKg = parseFloat(s.prevLog.split('×')[0]);
-      return parseFloat(s.kg) > prevKg;
-    });
-    if (prs.length > 0) {
-      const best = prs.reduce((b, s) =>
-        parseFloat(s.kg) > parseFloat(b.kg) ? s : b
-      );
-      acc.push({ exerciseName: ex.name, kg: best.kg, reps: best.reps });
-    }
-    return acc;
-  }, []);
+// Wykrywa nowe rekordy w sesji (historia + brak gorszej serii po lepszej)
 
 export default function WorkoutSummaryModal({
   visible,
@@ -51,7 +37,7 @@ export default function WorkoutSummaryModal({
 }) {
   const { saveWorkout } = useWorkout();
   const cars = useMemo(() => Math.floor(totalTonnage / KG_PER_CAR), [totalTonnage]);
-  const prs   = useMemo(() => detectPRs(exercises), [exercises]);
+  const prs   = useMemo(() => collectSessionPRs(exercises), [exercises]);
 
   const handleSave = () => {
     saveWorkout({

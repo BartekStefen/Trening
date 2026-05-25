@@ -13,6 +13,7 @@ import { useTheme } from '../context/ThemeContext';
 import VolumeChart from '../components/profile/VolumeChart';
 import AnalyticsDashboard from '../components/profile/AnalyticsDashboard';
 import AchievementBadges from '../components/profile/AchievementBadges';
+import StrengthRingsPanel from '../components/profile/StrengthRingsPanel';
 import SettingsModal from '../components/profile/SettingsModal';
 import { SectionHeader } from '../components/profile/CardHeader';
 import { PROFILE_INFO } from '../constants/profileInfoTexts';
@@ -229,6 +230,7 @@ export default function ProfileScreen({ navigation }) {
         </View>
 
         <AchievementBadges />
+        <StrengthRingsPanel />
 
         {/* Historia treningów */}
         <TouchableOpacity
